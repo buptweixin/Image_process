@@ -7,53 +7,64 @@ import StringIO
 FORMAT_OFFSET = int('0',16)
 SIZE_OFFSET = int('2',16)
 DATA_OFFSET = int('0a', 16)
-WiDTH_OFFSET = int('12',16)
+WIDTH_OFFSET = int('12',16)
 HEIGHT_OFFSET = int('16',16)
-BIBIT_OFFSET = int('1c',16)
+BPP_OFFSET = int('1c',16)
+
+
+
 
 
 class readImg:
     def __init__(self, filename):
-        #初始化类， 参数为图像名
+        '''Main class to open and edit a 24 bits bmp image'''
+
         bmpfile = open(filename)
         self.raw_data = bmpfile.read()
-        if self.raw_data[0] != 'B' or self.raw_data[1] != 'M':
-            raise TypeError, "The file is not a BMP image!"
+        bmpfile.close()
 
-        assert struct.unpack_from("<i", self.raw_data, BIBIT_OFFSET)[0] == 24
-        self.width = struct.unpack_from("<i", self.raw_data, WiDTH_OFFSET)[0]
+        self.width = struct.unpack_from("<i", self.raw_data, WIDTH_OFFSET)[0]
         self.height = struct.unpack_from("<i", self.raw_data, HEIGHT_OFFSET)[0]
-        self.bpp = struct.unpack_from("<i", self.raw_data, BIBIT_OFFSET)[0]
-        self.dataOff = struct.unpack_from("<i", self.raw_data, DATA_OFFSET)[0]
-        self.bitmap = self.createBitmap()
-        print self.height
+        self.data_offset = ord(self.raw_data[DATA_OFFSET])
+        print self.data_offset
+        self.bpp = ord(self.raw_data[BPP_OFFSET])  # Bits Per Pixel
+        self.bitmap = []
 
-    def getBitmap(self):
-        return self.bitmap
+        if self.raw_data[0] != "B" and self.raw_data[1] != "M":
+            raise TypeError, "Not a BMP file!"
+        if self.bpp != 24:
+            raise TypeError, "Not a 24 bits BMP file"
 
-    def createBitmap(self):
-        bitmap = []
+        self.create_bitmap()
 
-        #填充后的每行字节数
-        rowsize = ceil(self.bpp * self.width / 32.0) * 4
-        skip = int(rowsize - self.bpp*self.width/8)
+    def create_bitmap(self):
+        '''Creates the bitmap from the raw_data'''
 
-        off = self.dataOff
-        for col in xrange(self.height):
-            bitmap.append([])
+        off = self.data_offset
 
-            for row in xrange(self.width):
+        width_bytes = self.width*(self.bpp/8)
+        rowstride = ceil(width_bytes/4.0)*4
+        padding = int(rowstride - width_bytes)
+
+        for y in xrange(self.height):
+            self.bitmap.append([])
+
+            for x in xrange(self.width):
                 b = ord(self.raw_data[off])
                 g = ord(self.raw_data[off+1])
                 r = ord(self.raw_data[off+2])
-                bitmap[col].append((r, g, b))
-                off += 3
-            off += skip
-        # 由于bmp数据是从左下到右上的顺序的，所以对bitmap做逆序
-        bitmap = bitmap[::-1]
-        return bitmap
 
-    def saveBitmap(self, filename):
+                off = off+3
+
+                self.bitmap[y].append((r, g, b))
+
+            off += padding
+
+        self.bitmap = self.bitmap[::-1]
+
+    def save_to(self, filename):
+        '''Export the bmp saving the changes done to the bitmap'''
+
         raw_copy = StringIO.StringIO()
         bitmap = self.bitmap[::-1]
 
@@ -62,7 +73,7 @@ class readImg:
         padding = int(rowstride - width_bytes)
 
         # Same header as before until the width
-        raw_copy.write(self.raw_data[:WiDTH_OFFSET])
+        raw_copy.write(self.raw_data[:WIDTH_OFFSET])
 
         s = struct.Struct("<i")
         _w = s.pack(self.width)   # Transform width, height to
@@ -71,7 +82,7 @@ class readImg:
         raw_copy.write(_h)
 
         # After the new width and height the header it's the same
-        raw_copy.write(self.raw_data[HEIGHT_OFFSET+4:DATA_OFFSET])
+        raw_copy.write(self.raw_data[HEIGHT_OFFSET+4:self.data_offset])
 
         for y in xrange(self.height):
             for x in xrange(self.width):
@@ -99,13 +110,14 @@ class readImg:
         f = open(filename, "w")
         f.write(self.raw_data)
         f.close()
+        print "save successful"
 
 
 
 if __name__ == '__main__':
     img = readImg('../bear.bmp')
-    bitmap = img.getBitmap()
-    img.saveBitmap("..bear2.bmp")
+    print"save"
+    img.save_to("../bear12113.bmp")
 
 
 
