@@ -4,16 +4,15 @@ import struct
 from math import ceil
 import StringIO
 
+
 FORMAT_OFFSET = int('0',16)
 SIZE_OFFSET = int('2',16)
 DATA_OFFSET = int('0a', 16)
 WIDTH_OFFSET = int('12',16)
 HEIGHT_OFFSET = int('16',16)
 BPP_OFFSET = int('1c',16)
-
-
-
-
+HORIZONTAL = 0
+VERTICAL = 1
 
 class readImg:
     def __init__(self, filename):
@@ -26,7 +25,6 @@ class readImg:
         self.width = struct.unpack_from("<i", self.raw_data, WIDTH_OFFSET)[0]
         self.height = struct.unpack_from("<i", self.raw_data, HEIGHT_OFFSET)[0]
         self.data_offset = ord(self.raw_data[DATA_OFFSET])
-        print self.data_offset
         self.bpp = ord(self.raw_data[BPP_OFFSET])  # Bits Per Pixel
         self.bitmap = []
 
@@ -35,13 +33,12 @@ class readImg:
         if self.bpp != 24:
             raise TypeError, "Not a 24 bits BMP file"
 
-        self.create_bitmap()
+
 
     def create_bitmap(self):
         '''Creates the bitmap from the raw_data'''
 
         off = self.data_offset
-
         width_bytes = self.width*(self.bpp/8)
         rowstride = ceil(width_bytes/4.0)*4
         padding = int(rowstride - width_bytes)
@@ -56,7 +53,7 @@ class readImg:
 
                 off = off+3
 
-                self.bitmap[y].append((r, g, b))
+                self.bitmap[y].append([r, g, b])
 
             off += padding
 
@@ -110,14 +107,42 @@ class readImg:
         f = open(filename, "w")
         f.write(self.raw_data)
         f.close()
-        print "save successful"
+        f.close()
+
+    def rgb2gray(self):
+        for y in range(self.height):
+            for x in range(self.width):
+                try:
+                    mean = sum(self.bitmap[y][x])/3
+                    colour = (mean, mean, mean)
+                    self.bitmap[y][x] = colour
+                except IndexError as e:
+                    continue
+
+    def mirror(self, direction = HORIZONTAL):
+        if direction == HORIZONTAL:
+            for y in xrange(self.height):
+                self.bitmap[y] = self.bitmap[y][::-1]
+        elif direction == VERTICAL:
+            self.bitmap= self.bitmap[::-1]
+
+    def move(self, distance = 0, direction = HORIZONTAL):
+        if distance > 0:
+            self.bitmap[:][distance:self.width] = self.bitmap[:][:self.width - distance]
+
+
+
+
 
 
 
 if __name__ == '__main__':
-    img = readImg('../bear.bmp')
-    print"save"
-    img.save_to("../bear12113.bmp")
+    img =readImg('../bear.bmp')
+    img.create_bitmap()
+    img.rgb2gray()
+    #img.mirror(VERTICAL)
+    #img.move(distance=40, direction=HORIZONTAL)
+    img.save_to(filename="../bear121.bmp")
 
 
 
