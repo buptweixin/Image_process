@@ -69,27 +69,49 @@ class readImg:
 
     def save_to(self, data, filename):
         '''Export the bmp saving the changes done to the bitmap'''
+        print (len(data)*len(data[0]*3))+54
+        ##############
+        #     BMP头文件
+        #############
+        width = len(data)
+        height = len(data[0])
+        width_byte = width*(self.bpp/8)
+        rowstride = ceil(width_byte/4.0)*4
+        padding = int(rowstride - width_byte)
+
         raw_copy = StringIO.StringIO()
+        raw_copy.write(struct.pack('c', 'B'))
+        print "rawdata",raw_copy.read()
+        raw_copy.write(struct.pack('c', 'M'))
+        bfSize = rowstride*height + 54
+        bfSize = struct.pack('<I', bfSize)
+        raw_copy.write(bfSize)
+        raw_copy.write(struct.pack('<h', 0)) # 保留字节1必须为0
+        raw_copy.write(struct.pack('<h', 0)) # 保留字节2必须为0
+        raw_copy.write(struct.pack('<I', 54)) # 从文件头到实际数据的偏移量，没有调色板情况为54
+
+
+        #######
+        #   位图信息头
+        ######
+        raw_copy.write(struct.pack('<i', 14)) # BITMAPINFOHEADER所需字节数
+        raw_copy.write(struct.pack('<i', rowstride)) # 以像素为单位的图像宽度
+        raw_copy.write(struct.pack('<i', height)) # 以像素为单位的图像
+        raw_copy.write(struct.pack('<h', 1)) # 颜色平面数， 总被设为1
+        raw_copy.write(struct.pack('<h', 24)) # 比特数/像素 24位图为24
+        raw_copy.write(struct.pack('<i', 0)) # 图片压缩类型，0 不压缩（BI_RGB）
+        raw_copy.write(struct.pack('<i', 0)) # 图像大小, 当为BI_RGB格式时， 可设置为0
+        raw_copy.write(struct.pack('<i', 0)) # 水平分辨率，设为缺省值0
+        raw_copy.write(struct.pack('<i', 0)) # 垂直分辨率，设为缺省值0
+        raw_copy.write(struct.pack('<i', 0)) # 颜色索引数, 0表示使用所有颜色索引
+        raw_copy.write(struct.pack('<i', 0)) # 重要的索引， 0表示所有颜色索引都重要
+
+        ########
+        #     位图数据
+        ######
         bitmap = self.bitmap[::-1]
-
-        width_bytes = self.width*(self.bpp/8)
-        rowstride = ceil(width_bytes/4.0)*4
-        padding = int(rowstride - width_bytes)
-
-        # Same header as before until the width
-        raw_copy.write(self.raw_data[:WIDTH_OFFSET])
-
-        s = struct.Struct("<i")
-        _w = s.pack(self.width)   # Transform width, height to
-        _h = s.pack(self.height)  # little indian format
-        raw_copy.write(_w)
-        raw_copy.write(_h)
-
-        # After the new width and height the header it's the same
-        raw_copy.write(self.raw_data[HEIGHT_OFFSET+4:self.data_offset])
-
-        for y in xrange(self.height):
-            for x in xrange(self.width):
+        for y in xrange(len(data)):
+            for x in xrange(len(data[0])):
                 r, g, b = bitmap[y][x]
 
                 # Out of range control
