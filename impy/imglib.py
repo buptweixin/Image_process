@@ -36,7 +36,7 @@ class readImg:
         self.bpp = ord(self.raw_data[BPP_OFFSET])  # Bits Per Pixel
         self.bitmap = []
         self.rotateAngle = 30
-
+#123
         if self.raw_data[0] != "B" and self.raw_data[1] != "M":
             raise TypeError, "Not a BMP file!"
         if self.bpp != 24:
