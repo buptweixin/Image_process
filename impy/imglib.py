@@ -3,7 +3,7 @@
 import struct
 from math import ceil
 import StringIO
-
+import numpy as np
 import random
 
 FORMAT_OFFSET = int('0',16)
@@ -27,11 +27,8 @@ class readImg:
         bmpfile.close()
 
         self.width = struct.unpack_from("<i", self.raw_data, WIDTH_OFFSET)[0]
-        print struct.unpack_from("<i", self.raw_data, SIZE_OFFSET)[0]
         self.height = struct.unpack_from("<i", self.raw_data, HEIGHT_OFFSET)[0]
         self.data_offset = ord(self.raw_data[DATA_OFFSET])
-        print "data offset:", self.data_offset
-        print "bisize", struct.unpack_from("<i", self.raw_data, BISIZE_OFFSET)[0]
         self.bpp = ord(self.raw_data[BPP_OFFSET])  # Bits Per Pixel
         self.bitmap = []
 
@@ -39,6 +36,9 @@ class readImg:
             raise TypeError, "Not a BMP file!"
         if self.bpp != 24:
             raise TypeError, "Not a 24 bits BMP file"
+
+        # 11.12 added
+        self.create_bitmap()
 
 
 
@@ -65,9 +65,10 @@ class readImg:
             off += padding
 
         self.bitmap = self.bitmap[::-1]
-        return self.bitmap
+        ## 11.12 deleted
+        ## return self.bitmap
 
-    def save_to(self, data, filename):
+    def save_to(self, filename):
         '''Export the bmp saving the changes done to the bitmap'''
         raw_copy = StringIO.StringIO()
         bitmap = self.bitmap[::-1]
@@ -133,20 +134,50 @@ class readImg:
         elif direction == VERTICAL:
             self.bitmap= self.bitmap[::-1]
 
-    def move(self, distance = 0, direction = HORIZONTAL):
-        if distance > 0:
-            self.bitmap
-            self.bitmap[:][distance:self.width] = self.bitmap[:][:self.width - distance]
+    def move(self, dx, dy):
+
+        if dx > 0:
+            for i in range(self.height):
+                for j in range(1, self.width-dx):
+                    self.bitmap[i][-j] = self.bitmap[i][-j-dx]
+            for i in range(self.height):
+                for j in range(dx):
+                    self.bitmap[i][j] = (0, 0, 0)
+        else:
+            for i in range(self.height):
+                for j in range(self.width+dx):
+                    self.bitmap[i][j] = self.bitmap[i][j-dx]
+            for i in range(self.height):
+                for j in range(-1,dx,-1):
+                    self.bitmap[i][j] = (0,0,0)
+        if dy > 0:
+            for i in range(1, self.height-dy):
+                for j in range(self.width):
+                    self.bitmap[-i][j] = self.bitmap[-i-dy][j]
+            for i in range(dy):
+                for j in range(self.width):
+                    self.bitmap[i][j] = (0, 0, 0)
+        else:
+            for i in range(self.height+dy):
+                for j in range(self.width):
+                    self.bitmap[i][j] = self.bitmap[i-dy][j]
+            for i in range(-1, dy, -1):
+                for j in range(self.width):
+                    self.bitmap[i][j] = (0,0,0)
+
+
+    # 11.12added
+    def getPix(self, point):
+        return self.bitmap[point[1]][point[0]]
+
 
 
 
 if __name__ == '__main__':
-    img =readImg('../bear.bmp')
-    bitmap = img.create_bitmap()
-    #img.rgb2gray()
-    #img.mirror(VERTICAL)
-    #img.move(distance=40, direction=HORIZONTAL)
-    img.save_to(filename="../bear1107.bmp", data = bitmap)
+    img =readImg('../bear1107.bmp')
+    img.move(20,30)
+    img.save_to('./tmp.bmp')
+    #img.save_to(filename="../bear1107.bmp", data = bitmap)
 
 
 
