@@ -23,27 +23,7 @@ class guiFrame(wx.Frame):
         self.createMenuBar()
         self.direction = u'水平'
         self.button = wx.Button(self.panel, label="testDisabel")
-        # self.pc = wxPyPlot.PlotCanvas(self.panel)
-        # self.pc.Draw(self.MyDataObject())
 
-    # def MyDataObject(self):
-    #     # 50 个点的sin函数,用蓝色圆点表示
-    #     data1 = 2.*numpy.pi*numpy.arange(100)/100.
-    #     data1.shape = (50, 2)
-    #     data1[:,1] = numpy.sin(data1[:,0])
-    #     markers = wxPyPlot.PolyMarker(data1, legend='Green Markers', colour='blue', marker='circle',size=1)
-    #
-    #     # 50个点的cos函数,用红色表示
-    #     data2 = 2.*numpy.pi*numpy.arange(100)/100.
-    #     data2.shape = (50,2)
-    #     data2[:,1] = numpy.cos(data2[:,0])
-    #     wxPyPlot.PolyLine
-    #     lines = wxPyPlot.PolyLine(data2, legend= 'Red Line', colour='red')
-    #
-    #     GraphTitle="Plot Data(Sin and Cos)"
-    #
-    #
-    #     return wxPyPlot.PlotGraphics([markers, lines],GraphTitle, "X Axis", "Y Axis")
 
     def getToolbarData(self):
         return [
@@ -69,7 +49,6 @@ class guiFrame(wx.Frame):
         self.toolBtns = self.toolbar.GetChildren()
         self.moveBtn = self.toolBtns[2]
         self.cutBtn = self.toolBtns[3]
-        self.rotateBtn = self.toolBtns[6]
         self.OKBtn = self.toolBtns[7]
         self.OKBtn.Show(False)
         self.toolbar.Realize()
@@ -195,19 +174,27 @@ class guiFrame(wx.Frame):
                 if button != self.cutBtn:
                     button.Enable(True)
 
+    def setDownPoint(self, evt):
+        self.upPoint = evt.GetPositionTuple()
+
+    def setUpPoint(self, evt):
+        if all((self.moveBtn.IsEnabled(), self.cutBtn.IsEnabled())):
+            pass
+        else:
+            self.downPoint = evt.GetPositionTuple()
+            dx = self.downPoint[0]-self.upPoint[0]
+            dy = self.downPoint[1]-self.upPoint[1]
+            if not self.moveBtn.IsEnabled():
+                self.bitmap.move(dx, dy)
+            elif not self.cutBtn.IsEnabled():
+                self.bitmap.cut(self.upPoint, self.downPoint )
+            self.refreshBitmap()
+
+
 
     def OnRotate(self, evt):
-        if self.rotateBtn.IsEnabled():
-            self.rotateBtn.Enable(False)# 移动按钮设置为不可点击并将其他按钮设为可点击
-            self.OKBtn.Show(True)
-            for button in self.toolBtns:
-                if button != self.rotateBtn:
-                    button.Enable(True)
-
-
-
-
-
+        self.bitmap.rotate()
+        self.refreshBitmap()
 
     def OnZoomIn(self, evt):
         self.EnableToolbarBtns()
@@ -244,23 +231,6 @@ class guiFrame(wx.Frame):
     def OnHighPass(self, evt):
         pass
 
-    def setDownPoint(self, evt):
-        self.upPoint = evt.GetPositionTuple()
-
-    def setUpPoint(self, evt):
-        if all((self.moveBtn.IsEnabled(), self.cutBtn.IsEnabled(), self.rotateBtn.IsEnabled())):
-            pass
-        else:
-            self.downPoint = evt.GetPositionTuple()
-            dx = self.downPoint[0]-self.upPoint[0]
-            dy = self.downPoint[1]-self.upPoint[1]
-            if not self.moveBtn.IsEnabled():
-                self.bitmap.move(dx, dy)
-            elif not self.moveBtn.IsEnabled():
-                pass
-            elif not self.rotateBtn.IsEnabled:
-                pass
-            self.refreshBitmap()
 
 
 
@@ -371,6 +341,8 @@ class guiFrame(wx.Frame):
             menuItems = eachMenuData[1]
             menuBar.Append(self.createMenu(menuItems), menuLabel)
         self.SetMenuBar(menuBar)
+
+
 
 class App(wx.App):
     def OnPreInit(self):
