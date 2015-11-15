@@ -5,9 +5,11 @@ from math import ceil
 from math import cos
 from math import sin
 from math import pi
+from scipy.fftpack import dct
 import StringIO
 import numpy as np
 import pylab as pl
+import copy
 
 FORMAT_OFFSET = int('0',16)
 SIZE_OFFSET = int('2',16)
@@ -21,9 +23,10 @@ VERTICAL = 1
 class readImg:
     def __init__(self, filename):
         '''Main class to open and edit a 24 bits bmp image'''
-
+        
         bmpfile = open(filename)
         self.raw_data = bmpfile.read()
+        self.times = 0
         bmpfile.close()
 
         self.width = struct.unpack_from("<i", self.raw_data, WIDTH_OFFSET)[0]
@@ -36,6 +39,8 @@ class readImg:
             raise TypeError, "Not a BMP file!"
         if self.bpp != 24:
             raise TypeError, "Not a 24 bits BMP file"
+            
+        #self.rotateBitmap =  dxd
 
 
 
@@ -62,6 +67,7 @@ class readImg:
             off += padding
 
         self.bitmap = self.bitmap[::-1]
+        self.bitmap_backup = copy.deepcopy(self.bitmap)
 
     def save_to(self, filename):
         '''Export the bmp saving the changes done to the bitmap'''
@@ -135,11 +141,14 @@ class readImg:
             self.bitmap[:][distance:self.width] = self.bitmap[:][:self.width - distance]
 
     def cut(self,point1=(0,0),point2=(100,100)):
-        new_height=point2[0]-point1[0]
-        new_width=point2[1]-point1[1]
+        new_height=abs(point2[0]-point1[0])
+        new_width=abs(point2[1]-point1[1])
+        len_y=min(point1[0],point2[0])
+        len_x1=min(point1[1],point2[1])
+        len_x2=max(point1[1],point2[1])
         new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
         for y in xrange(new_height):
-            new_bitmap[y][:new_width]=self.bitmap[y+point1[0]][point1[1]:point2[1]]
+            new_bitmap[y][:new_width]=self.bitmap[y+len_y][len_x1:len_x2]
         self.bitmap=new_bitmap[:]
         self.height=new_height
         self.width=new_width
@@ -197,24 +206,8 @@ class readImg:
 
     def rotate(self,angle=30):
         theta=pi*angle/180
-        fSrcX1 = (float) (- (self.width) / 2)  
-        fSrcY1 = (float) (  (self.height) / 2)  
-        fSrcX2 = (float) (  (self.width) / 2) 
-        fSrcY2 = (float) (  (self.height) / 2)
-        fSrcX3 = (float) (- (self.width) / 2)  
-        fSrcY3 = (float) (- (self.height) / 2)  
-        fSrcX4 = (float) (  (self.width) / 2)  
-        fSrcY4 = (float) (- (self.height) / 2)
-        fDstX1 =  cos(theta) * fSrcX1 + sin(theta) * fSrcY1
-        fDstY1 = -sin(theta) * fSrcX1 + cos(theta) * fSrcY1
-        fDstX2 =  cos(theta) * fSrcX2 + sin(theta) * fSrcY2
-        fDstY2 = -sin(theta) * fSrcX2 + cos(theta) * fSrcY2
-        fDstX3 =  cos(theta) * fSrcX3 + sin(theta) * fSrcY3
-        fDstY3 = -sin(theta) * fSrcX3 + cos(theta) * fSrcY3
-        fDstX4 =  cos(theta) * fSrcX4 + sin(theta) * fSrcY4
-        fDstY4 = -sin(theta) * fSrcX4 + cos(theta) * fSrcY4
-        new_width  =int ( max( abs(fDstX4 - fDstX1), abs(fDstX3 - fDstX2) ) + 0.5)  
-        new_height = int( max( abs(fDstY4 - fDstY1), abs(fDstY3 - fDstY2) )  + 0.5)
+        new_width  =self.width
+        new_height = self.height
         new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
         dx = -0.5*new_width*cos(theta) - 0.5*new_height*sin(theta) + 0.5*self.width
         dy = 0.5*new_width*sin(theta) - 0.5*new_height*cos(theta) + 0.5*self.height
@@ -225,7 +218,7 @@ class readImg:
                 if (x<0)or(x>self.width)or(y<0)or(y>self.height):
                     new_bitmap[i][j]=(0,0,0)
                 else:
-                    new_bitmap[i][j]=self.bitmap[int(y)][int(x)]
+                    new_bitmap[i][j]=self.bitmap_backup[int(y)][int(x)]
         self.bitmap=new_bitmap[:]
         self.height=new_height
         self.width=new_width
@@ -418,76 +411,82 @@ class readImg:
         
         
     def plot_hist(self):
+        self.rgb2gray()
         b=np.array([],np.int)
-        g=np.array([],np.int)
-        r=np.array([],np.int)
         for y in xrange(self.height):
             for x in xrange(self.width):
                 b=np.append(b,self.bitmap[y][x][0])
-                g=np.append(g,self.bitmap[y][x][1])
-                r=np.append(r,self.bitmap[y][x][2])
         pl.figure
-        pl.subplot(231)
         fb=pl.hist(b,256,range=(0,255),facecolor='blue')
-        #fb=pl.hist(b)
         pl.show()
         fre_b=np.array(fb[0])/(self.height*self.width)
-        pl.subplot(232)
-        fg=pl.hist(g,256,range=(0,255),facecolor='green')
-        fre_g=np.array(fg[0])/(self.height*self.width)
-        pl.show()
-        
-        pl.subplot(233)
-        fr=pl.hist(r,256,range=(0,255),facecolor='red')
-        fre_r=np.array(fr[0])/(self.height*self.width)
-        pl.show()
         sum_b=np.zeros(256)
-        sum_g=np.zeros(256)
-        sum_r=np.zeros(256)
         for i in xrange(256):
             sum_b[i]=sum(fre_b[0:i+1])
-            sum_g[i]=sum(fre_g[0:i+1])
-            sum_r[i]=sum(fre_r[0:i+1])
+        new_width=self.width
+        new_height=self.height
+        new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
         for y in xrange(self.height):
             for x in xrange(self.width):
-                self.bitmap[y][x][0]=int (sum_b[self.bitmap[y][x][0]]*255)
-                self.bitmap[y][x][1]=int (sum_g[self.bitmap[y][x][1]]*255)
-                self.bitmap[y][x][2]=int (sum_r[self.bitmap[y][x][2]]*255)
-        b=np.array([],np.int)
-        g=np.array([],np.int)
-        r=np.array([],np.int)
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                b=np.append(b,self.bitmap[y][x][0])
-                g=np.append(g,self.bitmap[y][x][1])
-                r=np.append(r,self.bitmap[y][x][2])
-        pl.subplot(234)
-        fb=pl.hist(b,256,range=(0,255),facecolor='blue')
+                new_bitmap[y][x]=(int (sum_b[self.bitmap_backup[y][x][0]]*255+0.5),\
+                int (sum_b[self.bitmap_backup[y][x][1]]*255+0.5),\
+                int (sum_b[self.bitmap_backup[y][x][2]]*255+0.5))
+        self.bitmap=new_bitmap[:]
+        #b=np.array([],np.int)
+        #g=np.array([],np.int)
+        #r=np.array([],np.int)
+        #for y in xrange(self.height):
+            #for x in xrange(self.width):
+               # b=np.append(b,self.bitmap[y][x][0])
+                #g=np.append(g,self.bitmap[y][x][1])
+               # r=np.append(r,self.bitmap[y][x][2])
+        #pl.subplot(234)
+        #fb=pl.hist(b,256,range=(0,255),facecolor='blue')
         #fb=pl.hist(b)
+        #pl.show()
+        #pl.subplot(235)
+        #fg=pl.hist(g,256,range=(0,255),facecolor='green')
+        #pl.show()
+        #pl.subplot(236)
+        #fr=pl.hist(r,256,range=(0,255),facecolor='red')
+        #pl.show()
+    def image_fft(self):
+        self.rgb2gray()
+        p=np.zeros((self.height,self.width))
+        for y in xrange(self.height):
+            for x in xrange(self.width):
+                p[y][x]=self.bitmap[y][x][0]
+        f = np.fft.fft2(p)
+        fshift = np.fft.fftshift(f)
+        magnitude_spectrum = 20*np.log(np.abs(fshift))
+        pl.imshow(magnitude_spectrum, cmap = 'gray')
         pl.show()
-        pl.subplot(235)
-        fg=pl.hist(g,256,range=(0,255),facecolor='green')
-        pl.show()
-        pl.subplot(236)
-        fr=pl.hist(r,256,range=(0,255),facecolor='red')
-        pl.show()
+        for y in xrange(self.height):
+            for x in xrange(self.width):
+                self.bitmap[y][x]=(int(magnitude_spectrum[y][x]),int(magnitude_spectrum[y][x]),int(magnitude_spectrum[y][x]))
+    def image_dct(self):
+        self.rgb2gray()
+        p=np.zeros((self.height,self.width))
+        for y in xrange(self.height):
+            for x in xrange(self.width):
+                p[y][x]=self.bitmap[y][x][0]
 if __name__ == '__main__':
     img =readImg('../bear.bmp')
     img.create_bitmap()
-    img.plot_hist()
+    #@img.plot_hist()
     #print img.height
     #img.rgb2gray()
     #img.resize_nearest(100,100)
     #img.resize_bilinear(100,100)
-    #img.rotate(-130)
+    #img.rotate()
     #img.Smooth_LPF()
     #img.resize_nearest()
-    #img.cut()
+    #img.cut((50,50),(10,10))
     #img.resize_bilinear()
     #img.rotate()
-    img.Smooth_midvaule()
+    #img.Smooth_midvaule()
     #img.Sharpen_HPF()
-    
+    img.image_fft()
     #img.Sharpen_GFF()
     #img.Sharpen_Roberts()
     #img.Sharpen_Prewitt()
@@ -495,4 +494,4 @@ if __name__ == '__main__':
     #img.Sharpen_Laplacian()
     #img.move(distance=40, direction=HORIZONTAL)
     #img.plot_hist()    
-    img.save_to(filename="../out5.bmp")
+    img.save_to(filename="../out6.bmp")

@@ -3,27 +3,82 @@ __author__ = 'weixin'
 
 import wx
 import wx.lib.imagebrowser as imagebrowser
-import wx.lib.plot as wxPyPlot
 import os
+
+import matplotlib
+matplotlib.use('WXAgg')
 from impy import imglib
-import numpy
+from matplotlib.figure import Figure
+
+from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
+
+from numpy import sin, pi, arange, random
+from matplotlib import pyplot as plt
 
 
+
+class histPanel(wx.Panel):
+    def __init__(self, parent, id, pos, size, data):
+        super(histPanel, self).__init__(parent, id, pos, size)
+        self.data = data
+        self.createFigureCanvas()
+
+    def createFigureCanvas(self):
+        self.figure = Figure(figsize=(2,2))
+        self.axes = self.figure.add_subplot(111)
+        self.axes.hist(self.data, 256)
+        self.canvas = FigureCanvas(self, -1, self.figure)
+
+    def refresh(self, data):
+        self.axes.hist(data, 256)
+        self.canvas.Refresh()
 
 
 class guiFrame(wx.Frame):
     def __init__(self, parent):
         self.title = "Ulsula"
         super(guiFrame, self).__init__(parent, -1, self.title, size=(1200, 720))
+        self.sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.panel = wx.Panel(self, size = (self.Size[0]*2/3, self.Size[1]-20))
-        self.createNotebook()
+        self.panel.SetBackgroundColour("WHITE")
+        self.sizer.Add(self.panel, 1, wx.LEFT | wx.TOP | wx.EXPAND, border = 1)
+        self.noteBook = self.createNotebook()
+        self.sizer.Add(self.noteBook,1,wx.RIGHT|wx.TOP|wx.EXPAND, border = 1)
         self.createToolBar()
         self.initStatusBar()
-        self.panel.SetBackgroundColour("WHITE")
         self.createMenuBar()
         self.direction = u'水平'
-        self.button = wx.Button(self.panel, label="testDisabel")
+        self.method = u"双线性"
+        self.filename = './bear1107.bmp'
+        self.openBMP()
 
+    def createMenuItem(self, menu, label, status, handler, kind=wx.ITEM_NORMAL):
+        if not label:
+            menu.AppendSeparator()
+            return
+        menuItem = menu.Append(-1, label, status, kind) #4 创建菜单项
+        self.Bind(wx.EVT_MENU, handler, menuItem)
+
+    def createMenu(self, menuData):
+        menu = wx.Menu()
+        # 3 创建子菜单
+        for eachItem in menuData:
+            if len(eachItem) == 2:
+                label = eachItem[0]
+                subMenu = self.createMenu(eachItem[1])
+                menu.AppendMenu(wx.NewId(), label, subMenu)
+
+            else:
+                self.createMenuItem(menu, *eachItem)
+        return menu
+
+    def createMenuBar(self):
+        menuBar = wx.MenuBar()
+        for eachMenuData in self.menuData():
+            menuLabel = eachMenuData[0]
+            menuItems = eachMenuData[1]
+            menuBar.Append(self.createMenu(menuItems), menuLabel)
+        self.SetMenuBar(menuBar)
 
     def getToolbarData(self):
         return [
@@ -31,6 +86,7 @@ class guiFrame(wx.Frame):
             ["./icons/mirror_ver.png", u"垂直翻转", self.OnMirrorVer],
             ["./icons/move.png", u"移动图片", self.OnClickMoveBtn],
             ["./icons/cut.png", u"裁剪图片", self.OnClickCutBtn],
+            [[u'双线性',u'最近邻'],self.OnSelecteZoomMethod],
             ["./icons/zoomin.png", u"放大", self.OnZoomIn],
             ["./icons/zoomout.png", u"缩小", self.OnZoomOut],
             ["./icons/rotate.png", u"旋转", self.OnRotate],
@@ -41,51 +97,51 @@ class guiFrame(wx.Frame):
         self.toolbar = self.CreateToolBar()
         data = self.getToolbarData()
         for item in data:
-            icon = wx.Image(item[0], wx.BITMAP_TYPE_ANY).ConvertToBitmap()
-            toolbtn = wx.BitmapButton(self.toolbar, wx.NewId(), bitmap = icon)
-            toolbtn.Bind(wx.EVT_BUTTON, item[2])
-            toolbtn.SetHelpText(item[1])
-            self.toolbar.AddControl(toolbtn)
-        self.toolBtns = self.toolbar.GetChildren()
-        self.moveBtn = self.toolBtns[2]
-        self.cutBtn = self.toolBtns[3]
-        self.OKBtn = self.toolBtns[7]
+            if len(item) == 3:
+                icon = wx.Image(item[0], wx.BITMAP_TYPE_ANY).ConvertToBitmap()
+                toolbtn = wx.BitmapButton(self.toolbar, wx.NewId(), bitmap = icon)
+                toolbtn.Bind(wx.EVT_BUTTON, item[2])
+                toolbtn.SetHelpText(item[1])
+                self.toolbar.AddControl(toolbtn)
+            else:
+                choice = wx.Choice(self.toolbar, choices=item[0])
+                choice.Bind(wx.EVT_CHOICE, item[1])
+                self.toolbar.AddControl(choice)
+        cancelBtn = wx.Button(self.toolbar, wx.NewId(), label = u"还原")
+        cancelBtn.Bind(wx.EVT_BUTTON, self.OnCancel)
+        self.toolbar.AddControl(cancelBtn)
+
+        self.toolItems = self.toolbar.GetChildren()
+        self.moveBtn = self.toolItems[2]
+        self.cutBtn = self.toolItems[3]
+        self.OKBtn = self.toolItems[8]
         self.OKBtn.Show(False)
+        self.choice = self.toolItems[4]
+        #self.smoothMethod = self.choice
         self.toolbar.Realize()
-
-
-
-########################
-###
-###     图像处理响应
-###
-#######################
 
 ##########################
 ###
 ###     创建右侧控制菜单
 ###
 #########################
-    def createNotebook(self):
-        self.notebook = wx.Notebook(self.panel, pos=(self.panel.Size[0], 0), size = (self.Size[0]-self.panel.Size[0], self.panel.Size[1]))
-        panels = self.createPanels(self.notebook, self.notebook.Size)
-        labels = self.getPanellabel()
 
+    def createNotebook(self):
+        notebook = wx.Notebook(self, pos=(self.panel.Size[0], 0), size = (self.Size[0]-self.panel.Size[0], self.panel.Size[1]))
+        panels = self.createPanels(notebook, notebook.Size)
+        labels = self.getPanellabel()
         for item, panel in enumerate(panels):
-            self.notebook.AddPage(panel, labels[item])
+            notebook.AddPage(panel, labels[item])
+        return notebook
 
 
 
     def getData(self):
         return [
             [
-                [['label', u'平移:'], ['button', u'平移',self.OnClickMoveBtn]],
-                [['label', u'剪切'], ['button', u'剪切', self.OnClickCutBtn]],
-                [['label', u'缩放:'], ['choices', [u'最近邻', u'双线性'], 'method', self.OnSelecteZoomMethod], ['button', u'+', self.OnZoomIn], ['button', u'-', self.OnZoomOut]],
-                [['label', u'旋转'], ['button', u'旋转', self.OnRotate]]
-            ],
-            [
-                [['label', u'空域滤波'], ['button', u'平滑', self.OnSmooth], ['button', u'锐化', self.OnSharpen]],
+                [['label', u'空域滤波']],
+                [['choices', [u"低通滤波", u"中值滤波"], self.OnSmoothMethod],['button', u'平滑',self.OnSmooth]],
+                [['choices', [u"高通滤波", u"高增益滤波", u"Roberts算子", u"Prewitt算子", u"Sobel算子", u"Laplacian算子"],self.OnSharpenMethod],['button', u'锐化', self.OnSharpen]],
                 [['label', u'频域变换'], ['button', u'傅里叶', self.OnFourier], ['button', u'离散余弦', self.OnCos]],
                 [['label', u'反变换'],['button', u'傅里叶反变换', self.OnFourierInv], ['button', u'离散余弦反变换', self.OnCosInv]],
                 [['label', u'频域滤波'], ['button', u'低通滤波', self.OnLowPass], ['button', u'高通滤波', self.OnHighPass]]
@@ -96,7 +152,7 @@ class guiFrame(wx.Frame):
                 ]
 
     def getPanellabel(self):
-        return [u'几何变换', u'空域滤波', u'图像检索', u'xxx']
+        return [u'空域滤波', u'图像检索', u'xxx']
 
 
     def createPanels(self, parent, panels_size):
@@ -109,26 +165,28 @@ class guiFrame(wx.Frame):
             for itemcol, value in enumerate(paneldata):
                  for itemrow, component in enumerate(value):
                     if component[0] == u'label':
-                        gbsizer.Add(wx.StaticText(panel, label=component[1]), pos = (itemcol+1, itemrow+1), span=(1,1), flag=wx.ALIGN_RIGHT|wx.ALIGN_CENTER_VERTICAL)
+                        gbsizer.Add(wx.StaticText(panel, label=component[1]), pos = (itemcol+1, itemrow+1), span=(1,1), flag=wx.ALIGN_LEFT|wx.ALIGN_CENTER_VERTICAL)
                     elif component[0] == u'choices':
-                        self.buildOneChoices(panel, component[1:], gbsizer, position = (itemcol+1, itemrow+1))
+                        choice = self.buildOneChoices(panel, component[1:], gbsizer, position = (itemcol+1, itemrow+1))
+                        self.choices.append(choice)
                     elif component[0] == u'button':
                         self.buildOneButton(panel, component[1:], gbsizer, position = (itemcol+1, itemrow+1))
-
             panel.SetSizerAndFit(gbsizer)
             panels.append(panel)
+        self.smoothMethod = self.choices[0]
+        self.sharpenMethod = self.choices[1]
         return panels
 
     def buildOneChoices(self, parent, data, sizer, position):
-        choice = wx.Choice(parent, choices=data[0], name=data[1])
-        self.choices.append(choice)
-        choice.Bind(wx.EVT_CHOICE, data[2])
-        sizer.Add(choice, pos = position, span=(1,1), flag=wx.ALIGN_RIGHT|wx.ALIGN_CENTER_VERTICAL)
+        choice = wx.Choice(parent, choices=data[0])
+        choice.Bind(wx.EVT_CHOICE, data[1])
+        sizer.Add(choice, pos = position, span=(1,1), flag=wx.ALIGN_LEFT|wx.ALIGN_CENTER_VERTICAL)
+        return choice
 
     def buildOneButton(self, parent, data, sizer, position):
         button = wx.Button(parent, label = data[0])
         button.Bind(wx.EVT_BUTTON, data[1])
-        sizer.Add(button, pos = position, span=(1,1), flag=wx.ALIGN_RIGHT|wx.ALIGN_CENTER_VERTICAL)
+        sizer.Add(button, pos = position, span=(1,1), flag=wx.ALIGN_LEFT|wx.ALIGN_CENTER_VERTICAL)
 
     ### 响应事件
     def OnOK(self, evt):
@@ -138,7 +196,7 @@ class guiFrame(wx.Frame):
         self.direction = self.choices[0].GetStringSelection()
 
     def OnSelecteZoomMethod(self, evt):
-        self.method = self.choices[1].GetStringSelection()
+        self.method = self.choice.GetStringSelection()
 
     def OnMirrorHor(self, evt):
         self.EnableToolbarBtns()
@@ -152,14 +210,14 @@ class guiFrame(wx.Frame):
 
     def EnableToolbarBtns(self):
         self.OKBtn.Show(False)
-        for button in self.toolBtns:
+        for button in self.toolItems:
             button.Enable(True)
 
     def OnClickMoveBtn(self, evt):
         if self.moveBtn.IsEnabled():
             self.moveBtn.Enable(False)# 移动按钮设置为不可点击并将其他按钮设为可点击
             self.OKBtn.Show(True)
-            for button in self.toolBtns:
+            for button in self.toolItems:
                 if button != self.moveBtn:
                     button.Enable(True)
 
@@ -170,7 +228,7 @@ class guiFrame(wx.Frame):
         if self.cutBtn.IsEnabled():
             self.cutBtn.Enable(False)# 移动按钮设置为不可点击并将其他按钮设为可点击
             self.OKBtn.Show(True)
-            for button in self.toolBtns:
+            for button in self.toolItems:
                 if button != self.cutBtn:
                     button.Enable(True)
 
@@ -187,9 +245,14 @@ class guiFrame(wx.Frame):
             if not self.moveBtn.IsEnabled():
                 self.bitmap.move(dx, dy)
             elif not self.cutBtn.IsEnabled():
-                self.bitmap.cut(self.upPoint, self.downPoint )
+                self.bitmap.cut(self.upPoint[::-1], self.downPoint[::-1] )
             self.refreshBitmap()
-
+    def OnCancel(self, evt):
+        self.EnableToolbarBtns()
+        self.image = wx.Image(self.filename, wx.BITMAP_TYPE_BMP)
+        self.bitmap = imglib.readImg(self.filename)
+        self.sb1.SetBitmap(wx.BitmapFromImage(self.image))
+        self.sb1.Refresh()
 
 
     def OnRotate(self, evt):
@@ -198,26 +261,56 @@ class guiFrame(wx.Frame):
 
     def OnZoomIn(self, evt):
         self.EnableToolbarBtns()
-        pass
+        if self.method == u"最近邻":
+            self.bitmap.resize_nearest(1.1)
+        else:
+            self.bitmap.resize_bilinear(1.1)
+        self.refreshBitmap()
 
     def OnZoomOut(self, evt):
         self.EnableToolbarBtns()
+        if self.method == u"最近邻":
+            self.bitmap.resize_nearest(0.9)
+        else:
+            self.bitmap.resize_bilinear(0.9)
+        self.refreshBitmap()
+
+
+    def OnSmoothMethod(self, evt):
         pass
 
-
+    def OnSharpenMethod(self, evt):
+        pass
 
     def OnSharpen(self, evt):
-        self.EnableToolbarBtns()
-        pass
+        if self.sharpenMethod.GetStringSelection() == u"高通滤波":
+            self.bitmap.Sharpen_HPF()
+        elif self.sharpenMethod.GetStringSelection() == u"高增益滤波":
+            self.bitmap.Sharpen_GFF()
+        elif self.sharpenMethod.GetStringSelection() == u"Roberts算子":
+            self.bitmap.Sharpen_Roberts()
+        elif self.sharpenMethod.GetStringSelection() == u"Prewitt算子":
+            self.bitmap.Sharpen_Prewitt()
+        elif self.sharpenMethod.GetStringSelection() == u"Sobel算子":
+            self.bitmap.Sharpen_Sobel()
+        elif self.sharpenMethod.GetStringSelection() == u"Laplacian算子":
+            self.bitmap.Sharpen_Laplacian()
+        self.refreshBitmap()
 
     def OnSmooth(self, evt):
-        pass
+        if self.smoothMethod.GetStringSelection() == u"低通滤波":
+            self.bitmap.Smooth_LPF()
+        else:
+            self.bitmap.Smooth_midvaule()
+        self.refreshBitmap()
 
     def OnFourier(self, evt):
-        pass
+        self.bitmap.image_fft()
+        self.refreshBitmap()
 
     def OnCos(self, evt):
-        pass
+        self.bitmap.image_dct()
+        self.refreshBitmap()
 
     def OnFourierInv(self, evt):
         pass
@@ -246,25 +339,14 @@ class guiFrame(wx.Frame):
 
     def menuData(self):#2 菜单数据
         return [("&File", (
-            ("&New", "New BMP file", self.OnNew),
             ("&Open", "Open BMP file", self.OnOpen),
             ("&Save", "Save BMP file", self.OnSave),
             ("&Saveas", "Save as", self.OnSaveAs),
             ("", "", ""),
-            ("&Quit", "Quit", self.OnCloseWindow),
-            ("&Font", "Select font", self.OnSelectFont)
+            ("&Quit", "Quit", self.OnCloseWindow)
         ))]
 
     wildcard = "BMP files (*.bmp)|*.bmp"
-
-    def OnNew(self, evt): pass
-
-    #改变字体
-    def OnSelectFont(self, evt):
-        dlg = imagebrowser.ImageDialog(None, './')
-        if dlg.ShowModal() == wx.ID_OK:
-            print "You selected file:", dlg.GetFile()
-        dlg.Destroy()
 
 
     def OnOpen(self, evt):
@@ -311,36 +393,11 @@ class guiFrame(wx.Frame):
 
 
     def OnCloseWindow(self, evt):
-        pass
+        self.Destroy()
+        wx.Exit()
 
 
-    def createMenuItem(self, menu, label, status, handler, kind=wx.ITEM_NORMAL):
-        if not label:
-            menu.AppendSeparator()
-            return
-        menuItem = menu.Append(-1, label, status, kind) #4 创建菜单项
-        self.Bind(wx.EVT_MENU, handler, menuItem)
 
-    def createMenu(self, menuData):
-        menu = wx.Menu()
-        # 3 创建子菜单
-        for eachItem in menuData:
-            if len(eachItem) == 2:
-                label = eachItem[0]
-                subMenu = self.createMenu(eachItem[1])
-                menu.AppendMenu(wx.NewId(), label, subMenu)
-
-            else:
-                self.createMenuItem(menu, *eachItem)
-        return menu
-
-    def createMenuBar(self):
-        menuBar = wx.MenuBar()
-        for eachMenuData in self.menuData():
-            menuLabel = eachMenuData[0]
-            menuItems = eachMenuData[1]
-            menuBar.Append(self.createMenu(menuItems), menuLabel)
-        self.SetMenuBar(menuBar)
 
 
 
