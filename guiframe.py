@@ -9,46 +9,31 @@ import matplotlib
 matplotlib.use('WXAgg')
 from impy import imglib
 from matplotlib.figure import Figure
-
+import numpy as np
 from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
 
-from numpy import sin, pi, arange, random
-from matplotlib import pyplot as plt
 
 
 
-class histPanel(wx.Panel):
-    def __init__(self, parent, id, pos, size, data):
-        super(histPanel, self).__init__(parent, id, pos, size)
-        self.data = data
-        self.createFigureCanvas()
-
-    def createFigureCanvas(self):
-        self.figure = Figure(figsize=(2,2))
-        self.axes = self.figure.add_subplot(111)
-        self.axes.hist(self.data, 256)
-        self.canvas = FigureCanvas(self, -1, self.figure)
-
-    def refresh(self, data):
-        self.axes.hist(data, 256)
-        self.canvas.Refresh()
 
 
 class guiFrame(wx.Frame):
     def __init__(self, parent):
-        self.title = "Ulsula"
+        self.title = "Pixel"
         super(guiFrame, self).__init__(parent, -1, self.title, size=(1200, 720))
         self.sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.panel = wx.Panel(self, size = (self.Size[0]*2/3, self.Size[1]-20))
         self.panel.SetBackgroundColour("WHITE")
         self.sizer.Add(self.panel, 1, wx.LEFT | wx.TOP | wx.EXPAND, border = 1)
         self.noteBook = self.createNotebook()
+        self.createHistPanel()
         self.sizer.Add(self.noteBook,1,wx.RIGHT|wx.TOP|wx.EXPAND, border = 1)
         self.createToolBar()
         self.initStatusBar()
         self.createMenuBar()
         self.direction = u'水平'
         self.method = u"双线性"
+        self.filtermethod = u"理想"
         self.filename = './bear1107.bmp'
         self.openBMP()
 
@@ -127,13 +112,21 @@ class guiFrame(wx.Frame):
 #########################
 
     def createNotebook(self):
-        notebook = wx.Notebook(self, pos=(self.panel.Size[0], 0), size = (self.Size[0]-self.panel.Size[0], self.panel.Size[1]))
+        notebook = wx.Notebook(self, pos=(self.panel.Size[0], 0),\
+                               size = (self.Size[0]-self.panel.Size[0], self.panel.Size[1]/2))
         panels = self.createPanels(notebook, notebook.Size)
         labels = self.getPanellabel()
         for item, panel in enumerate(panels):
             notebook.AddPage(panel, labels[item])
         return notebook
 
+    def createHistPanel(self):
+        self.histpanel = histPanel(self, style = wx.BORDER|wx.SOLID, pos = (self.panel.Size[0], self.panel.Size[1]/2), size = (self.noteBook.Size[0], self.panel.Size[1]/2))
+        histEqualizationBtn = wx.Button(self.histpanel, label=u"均衡化")
+        histEqualizationBtn.Bind(wx.EVT_BUTTON, self.OnHistEqu)
+        self.histpanel.hsizer.Add(histEqualizationBtn,1, wx.RIGHT, border=1)
+        self.histpanel.vsizer.Add(self.histpanel.hsizer)
+        self.histpanel.SetSizerAndFit(self.histpanel.vsizer)
 
 
     def getData(self):
@@ -142,14 +135,18 @@ class guiFrame(wx.Frame):
                 [['label', u'空域滤波']],
                 [['choices', [u"低通滤波", u"中值滤波"], self.OnSmoothMethod],['button', u'平滑',self.OnSmooth]],
                 [['choices', [u"高通滤波", u"高增益滤波", u"Roberts算子", u"Prewitt算子", u"Sobel算子", u"Laplacian算子"],self.OnSharpenMethod],['button', u'锐化', self.OnSharpen]],
-                [['label', u'频域变换'], ['button', u'傅里叶', self.OnFourier], ['button', u'离散余弦', self.OnCos]],
-                [['label', u'反变换'],['button', u'傅里叶反变换', self.OnFourierInv], ['button', u'离散余弦反变换', self.OnCosInv]],
-                [['label', u'频域滤波'], ['button', u'低通滤波', self.OnLowPass], ['button', u'高通滤波', self.OnHighPass]]
+                [['button', u'傅里叶', self.OnFourier], ['button', u'离散余弦', self.OnCos]],
+                [['button', u'傅里叶反变换', self.OnFourierInv], ['button', u'离散余弦反变换', self.OnCosInv]],
+                [['choices', [u"理想滤波器", u"巴特沃斯滤波器", u"高斯滤波器", u"指数滤波器"], self.OnFilterChoice],
+                ['slider',[10, 0, 50]]],
+                [['button', u'低通滤波', self.OnLowPass], ['button', u'高通滤波', self.OnHighPass]]
             ],
             [
-                [['label', u'图像检索']]
+                [['label', u'图像检索'],['button' ,u'选择文件夹', self.OnSearchSimilarImg], ['label', u'similarImg']]
             ]
                 ]
+
+
 
     def getPanellabel(self):
         return [u'空域滤波', u'图像检索', u'xxx']
@@ -165,16 +162,34 @@ class guiFrame(wx.Frame):
             for itemcol, value in enumerate(paneldata):
                  for itemrow, component in enumerate(value):
                     if component[0] == u'label':
-                        gbsizer.Add(wx.StaticText(panel, label=component[1]), pos = (itemcol+1, itemrow+1), span=(1,1), flag=wx.ALIGN_LEFT|wx.ALIGN_CENTER_VERTICAL)
+                        if component[1] == u'similarImg':
+                            font = wx.Font(14, wx.DECORATIVE, wx.ITALIC, wx.NORMAL)
+                            self.similarImg = wx.StaticText(panel, label=" ", style=wx.TE_PROCESS_ENTER)
+                            self.similarImg.SetFont(font)
+                            self.similarImg.SetForegroundColour("RED")
+                            gbsizer.Add(self.similarImg, pos = (3,1), span=(1,1),flag=wx.ALIGN_LEFT|wx.ALIGN_CENTER_VERTICAL)
+                        else:
+                            gbsizer.Add(wx.StaticText(panel, label=component[1]), pos = (itemcol+1, itemrow+1), span=(1,1), flag=wx.ALIGN_LEFT|wx.ALIGN_CENTER_VERTICAL)
                     elif component[0] == u'choices':
                         choice = self.buildOneChoices(panel, component[1:], gbsizer, position = (itemcol+1, itemrow+1))
                         self.choices.append(choice)
                     elif component[0] == u'button':
                         self.buildOneButton(panel, component[1:], gbsizer, position = (itemcol+1, itemrow+1))
+                    elif component[0] == u'slider':
+                        self.slider = wx.Slider(panel, id = wx.NewId(), value = component[1][0], minValue=component[1][1],
+                                                maxValue = component[1][2], style=wx.SL_HORIZONTAL | wx.SL_AUTOTICKS | wx.SL_LABELS)
+                        gbsizer.Add(self.slider, pos = (itemcol+1, itemrow+1), span=(1,1), flag=wx.ALIGN_LEFT|wx.ALIGN_CENTER_VERTICAL)
             panel.SetSizerAndFit(gbsizer)
             panels.append(panel)
-        self.smoothMethod = self.choices[0]
-        self.sharpenMethod = self.choices[1]
+        self.smoothMethodChoices = self.choices[0]
+        self.sharpenMethodChoices = self.choices[1]
+        self.filtermethodChoices = self.choices[2]
+        self.fourierBtn = panels[0].GetChildren()[6]
+        self.costranBtn = panels[0].GetChildren()[7]
+        self.fourierInvBtn = panels[0].GetChildren()[9]
+        self.costranInvBtn = panels[0].GetChildren()[10]
+        self.fourierInvBtn.Enable(False)
+        self.costranInvBtn.Enable(False)
         return panels
 
     def buildOneChoices(self, parent, data, sizer, position):
@@ -282,23 +297,26 @@ class guiFrame(wx.Frame):
     def OnSharpenMethod(self, evt):
         pass
 
+    def OnFilterChoice(self, evt):
+        self.filtermethod = self.filtermethodChoices.GetStringSelection()
+
     def OnSharpen(self, evt):
-        if self.sharpenMethod.GetStringSelection() == u"高通滤波":
+        if self.sharpenMethodChoices.GetStringSelection() == u"高通滤波":
             self.bitmap.Sharpen_HPF()
-        elif self.sharpenMethod.GetStringSelection() == u"高增益滤波":
+        elif self.sharpenMethodChoices.GetStringSelection() == u"高增益滤波":
             self.bitmap.Sharpen_GFF()
-        elif self.sharpenMethod.GetStringSelection() == u"Roberts算子":
+        elif self.sharpenMethodChoices.GetStringSelection() == u"Roberts算子":
             self.bitmap.Sharpen_Roberts()
-        elif self.sharpenMethod.GetStringSelection() == u"Prewitt算子":
+        elif self.sharpenMethodChoices.GetStringSelection() == u"Prewitt算子":
             self.bitmap.Sharpen_Prewitt()
-        elif self.sharpenMethod.GetStringSelection() == u"Sobel算子":
+        elif self.sharpenMethodChoices.GetStringSelection() == u"Sobel算子":
             self.bitmap.Sharpen_Sobel()
-        elif self.sharpenMethod.GetStringSelection() == u"Laplacian算子":
+        elif self.sharpenMethodChoices.GetStringSelection() == u"Laplacian算子":
             self.bitmap.Sharpen_Laplacian()
         self.refreshBitmap()
 
     def OnSmooth(self, evt):
-        if self.smoothMethod.GetStringSelection() == u"低通滤波":
+        if self.smoothMethodChoices.GetStringSelection() == u"低通滤波":
             self.bitmap.Smooth_LPF()
         else:
             self.bitmap.Smooth_midvaule()
@@ -307,22 +325,64 @@ class guiFrame(wx.Frame):
     def OnFourier(self, evt):
         self.bitmap.image_fft()
         self.refreshBitmap()
+        self.fourierBtn.Enable(False)
+        self.fourierInvBtn.Enable(True)
+
+    def OnFourierInv(self, evt):
+        self.bitmap.image_ifft()
+        self.refreshBitmap()
+        self.fourierBtn.Enable(True)
+        self.fourierInvBtn.Enable(False)
 
     def OnCos(self, evt):
         self.bitmap.image_dct()
         self.refreshBitmap()
+        self.costranBtn.Enable(False)
+        self.costranInvBtn.Enable(True)
 
-    def OnFourierInv(self, evt):
-        pass
+
 
     def OnCosInv(self, evt):
-        pass
+        self.bitmap.image_idct()
+        self.refreshBitmap()
+        self.costranBtn.Enable(True)
+        self.costranInvBtn.Enable(False)
 
     def OnLowPass(self, evt):
-        pass
+        self.OnFourier(evt)
+        args = self.slider.GetValue()
+        if self.filtermethod == u"理想":
+            self.bitmap.Ideal_LPF(args)
+        elif self.filtermethod == u"巴特沃斯":
+            self.bitmap.butterworth_LPF(d=args)
+        elif self.filtermethod == u"高斯":
+            self.bitmap.Gauss_LPF(d=args)
+        else:
+            self.bitmap.exponential_LPF(d=args)
+        self.refreshBitmap()
 
     def OnHighPass(self, evt):
-        pass
+        self.OnFourier(evt)
+        args = self.slider.GetValue()
+        if self.filtermethod == u"理想":
+            self.bitmap.Ideal_HPF(d= args)
+        elif self.filtermethod == u"巴特沃斯":
+            self.bitmap.butterworth_HPF(d= args)
+        elif self.filtermethod == u"高斯":
+            self.bitmap.Gauss_HPF(d= args)
+        else:
+            self.bitmap.exponential_HPF(d= args)
+        self.refreshBitmap()
+
+    def showHistFig(self):
+        data = self.bitmap.hist()
+        self.histpanel.refresh(data)
+
+    def OnHistEqu(self, evt):
+        data = self.bitmap.hist()
+        equData = self.histpanel.refresh(data)
+        self.bitmap.hist_equalization(equData)
+        self.refreshBitmap()
 
 
 
@@ -350,13 +410,41 @@ class guiFrame(wx.Frame):
 
 
     def OnOpen(self, evt):
-        dlg = wx.FileDialog(self, "Open BMP file", os.getcwd(), wildcard = self.wildcard, style=wx.OPEN)
-        if dlg.ShowModal() == wx.ID_OK:
-            self.filename = dlg.GetPath()
+        fileDlg = wx.FileDialog(self, "Open BMP file", os.getcwd(), wildcard = self.wildcard, style=wx.OPEN)
+        if fileDlg.ShowModal() == wx.ID_OK:
+            self.filename = fileDlg.GetPath()
             self.openBMP()
-            self.SetTitle(self.title + '--' + self.filename)
+        fileDlg.Destroy()
 
-        dlg.Destroy()
+    def OnSearchSimilarImg(self, evt):
+        pathDlg = wx.DirDialog(self, "Select a dir", os.getcwd())
+        if pathDlg.ShowModal() == wx.ID_OK:
+            self.path = pathDlg.GetPath()
+            filenames =  os.listdir(self.path)
+            filenames = filter(lambda filename: filename[-4:]==".bmp", filenames)
+            filenames = [self.path+'/'+filename for filename in filenames]
+        hists =  [imglib.readImg(filename).hist() for filename in filenames]
+        bitmaphist = self.bitmap.hist()
+        diff = [np.sum((bitmaphist-hist)**2, axis=0) for hist in hists]
+        sortedImg = np.argsort(diff, axis=0)
+        label = u"共发现{filenum}个.bmp格式文件， 按直方图相似度排序为：".format(filenum=len(filenames))
+        for item, value in enumerate(sortedImg):
+            label += u"\n"+str(item+1)+u"."+filenames[value].split('/')[-1]
+            if item > 9:
+                break
+        self.similarImg.SetLabel(label)
+        pathDlg.Destroy()
+        dlg = self.createImageDialog()
+        if dlg.ShowModal() == wx.ID_OK:
+            print "OK"
+        # wx.Image()
+        # imgDlg = wx.Dialog(self, -1, "similarImages", size=(800,600))
+
+    # def createImageDialog(self):
+    #     dlg = wx.Dialog(self, -1, "Similar Images", size = (800, 600))
+    #     okbutton = wx.Button(dlg, wx.ID_OK, "OK",pos = (400, 580))
+    #     okbutton.SetDefault()
+    #     return dlg
 
     def openBMP(self):
         # 打开图像，并复制一份，所有图像处理操作在这个复制图像上进行R
@@ -368,6 +456,9 @@ class guiFrame(wx.Frame):
         self.sb1.Bind(wx.EVT_MOTION, self.getImageGray)
         self.sb1.Bind(wx.EVT_LEFT_DOWN, self.setDownPoint)
         self.sb1.Bind(wx.EVT_LEFT_UP, self.setUpPoint)
+        data = self.bitmap.hist()
+        self.histpanel.refresh(data)
+        self.SetTitle(self.title + '--' + self.filename)
 
     # created at 11.12
     def refreshBitmap(self):
@@ -375,6 +466,8 @@ class guiFrame(wx.Frame):
         self.image = wx.Image(self.tmpImg, wx.BITMAP_TYPE_BMP)
         self.sb1.SetBitmap(wx.BitmapFromImage(self.image))
         self.sb1.Refresh()
+        data = self.bitmap.hist()
+        self.histpanel.refresh(data)
 
 
     def OnSave(self, evt):
@@ -392,10 +485,34 @@ class guiFrame(wx.Frame):
 
 
 
+
+
     def OnCloseWindow(self, evt):
         self.Destroy()
         wx.Exit()
 
+
+class histPanel(wx.Panel):
+    def __init__(self, *args, **kwargs):
+        super(histPanel, self).__init__(*args, **kwargs)
+        self.hsizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.vsizer = wx.BoxSizer(wx.VERTICAL)
+        self.createFigureCanvas()
+
+    def createFigureCanvas(self):
+        self.figure = Figure(figsize=(4,4))
+        self.axes = self.figure.add_subplot(111)
+        # self.axes = self.figure.add_subplot(111)
+        #self.axes.hist([1,1,1,12,2,2,2,3], 120)
+        self.canvas = FigureCanvas(self, -1, self.figure)
+        self.vsizer.Add(self.canvas)
+
+
+    def refresh(self, data):
+        hist_data = self.axes.hist(data, 256)
+        self.canvas.draw()
+        #self.canvas.Refresh()
+        return hist_data
 
 
 
@@ -403,8 +520,9 @@ class guiFrame(wx.Frame):
 
 class App(wx.App):
     def OnPreInit(self):
-        provider = wx.CreateFileTipProvider("./impy/tips.txt", 0)
-        wx.ShowTip(None, provider, True)
+        bmp = wx.Image("./icons/splash.png", wx.BITMAP_TYPE_PNG).ConvertToBitmap()
+        wx.SplashScreen(bmp, wx.SPLASH_CENTRE_ON_SCREEN | wx.SPLASH_TIMEOUT,1500, None, -1)
+        wx.Yield()
         myframe = guiFrame(None)
         myframe.Show()
         return True

@@ -4,8 +4,8 @@ import struct
 from math import ceil
 from math import cos
 from math import sin
-from math import pi
-from scipy.fftpack import dct
+from math import pi,sqrt,exp
+from scipy.fftpack import dct,idct
 import StringIO
 import numpy as np
 import pylab as pl
@@ -27,6 +27,9 @@ class readImg:
         bmpfile = open(filename)
         self.raw_data = bmpfile.read()
         self.times = 0
+        self.b=np.array([])
+        self.g=np.array([])
+        self.r=np.array([])
         bmpfile.close()
 
         self.width = struct.unpack_from("<i", self.raw_data, WIDTH_OFFSET)[0]
@@ -174,7 +177,7 @@ class readImg:
         for y in xrange(new_height):
             y0=y*fh
             y1=int(y0)
-            if y1==self.height:
+            if y1==self.height-1:
                 y2=y1
             else:
                 y2=y1+1
@@ -184,7 +187,7 @@ class readImg:
             for x in xrange(new_width):
                 x0=x*fw
                 x1=int(x0)
-                if x1==self.width:
+                if x1==self.width-1:
                     x2=x1
                 else:
                     x2=x1+1
@@ -222,6 +225,7 @@ class readImg:
         self.bitmap=new_bitmap[:]
         self.height=new_height
         self.width=new_width
+        self.times += 1
         
     def Smooth_LPF(self,m=1):
         new_width=self.width
@@ -250,10 +254,12 @@ class readImg:
         new_width=self.width
         new_height=self.height
         new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
+        n=(2*m+1)**2
+        mid=(n-1)/2
         p=np.array([0,0,0])
-        b=np.array([],np.int)
-        g=np.array([],np.int)
-        r=np.array([],np.int)
+        b=np.ones(n)
+        g=np.ones(n)
+        r=np.ones(n)
         for y in xrange(new_height):
             for x in xrange(new_width):
                 if (y-m<1)or(x-m<1)or(y+m>new_height-1)or(x+m>new_width-1):
@@ -263,12 +269,16 @@ class readImg:
                         for j in xrange (2*m+1):
                             p=np.array(self.bitmap[y-m+i][x-m+j])
                             #print 'b'
-                            b = np.append(b,p[0])
+                            b[(2*m+1)*i+j]=p[0]
                             #print 'g'
-                            g = np.append(g,p[1])
+                            g[(2*m+1)*i+j]=p[1]
                             #print 'r'
-                            r = np.append(r,p[2])
-                    p=(int(np.median(b)),int(np.median(g)),int(np.median(r)))
+                            r[(2*m+1)*i+j]=p[2]
+                    #p=(int(np.median(b)),int(np.median(g)),int(np.median(r)))
+                    b=sorted(b)
+                    g=sorted(g)
+                    r=sorted(r)
+                    p=(int(b[mid]),int(g[mid]),int(r[mid]))
                     new_bitmap[y][x]=p
         self.bitmap=new_bitmap[:]
         self.height=new_height
@@ -412,10 +422,11 @@ class readImg:
         
     def plot_hist(self):
         self.rgb2gray()
-        b=np.array([],np.int)
+        b=np.zeros((self.height,self.width))
         for y in xrange(self.height):
             for x in xrange(self.width):
-                b=np.append(b,self.bitmap[y][x][0])
+                b[y][x]=self.bitmap[y][x][0]
+        b.shape=(self.height*self.width)
         pl.figure
         fb=pl.hist(b,256,range=(0,255),facecolor='blue')
         pl.show()
@@ -432,44 +443,267 @@ class readImg:
                 int (sum_b[self.bitmap_backup[y][x][1]]*255+0.5),\
                 int (sum_b[self.bitmap_backup[y][x][2]]*255+0.5))
         self.bitmap=new_bitmap[:]
-        #b=np.array([],np.int)
-        #g=np.array([],np.int)
-        #r=np.array([],np.int)
-        #for y in xrange(self.height):
-            #for x in xrange(self.width):
-               # b=np.append(b,self.bitmap[y][x][0])
-                #g=np.append(g,self.bitmap[y][x][1])
-               # r=np.append(r,self.bitmap[y][x][2])
-        #pl.subplot(234)
-        #fb=pl.hist(b,256,range=(0,255),facecolor='blue')
-        #fb=pl.hist(b)
-        #pl.show()
-        #pl.subplot(235)
-        #fg=pl.hist(g,256,range=(0,255),facecolor='green')
-        #pl.show()
-        #pl.subplot(236)
-        #fr=pl.hist(r,256,range=(0,255),facecolor='red')
-        #pl.show()
+
     def image_fft(self):
-        self.rgb2gray()
-        p=np.zeros((self.height,self.width))
+        b=np.zeros((self.height,self.width))
+        g=np.zeros((self.height,self.width))
+        r=np.zeros((self.height,self.width))
         for y in xrange(self.height):
             for x in xrange(self.width):
-                p[y][x]=self.bitmap[y][x][0]
-        f = np.fft.fft2(p)
-        fshift = np.fft.fftshift(f)
-        magnitude_spectrum = 20*np.log(np.abs(fshift))
-        pl.imshow(magnitude_spectrum, cmap = 'gray')
+                b[y][x]=self.bitmap[y][x][0]
+                g[y][x]=self.bitmap[y][x][1]
+                r[y][x]=self.bitmap[y][x][2]
+        self.b= np.fft.fft2(b)
+        self.g= np.fft.fft2(g)
+        self.r= np.fft.fft2(r)
+        fshiftb = np.fft.fftshift(self.b)
+        fshiftg= np.fft.fftshift(self.g)
+        fshiftr = np.fft.fftshift(self.r)
+        magnitude_spectrumb = 20*np.log(np.abs(fshiftb))
+        magnitude_spectrumg= 20*np.log(np.abs(fshiftg))
+        magnitude_spectrumr = 20*np.log(np.abs(fshiftr))
         pl.show()
         for y in xrange(self.height):
             for x in xrange(self.width):
-                self.bitmap[y][x]=(int(magnitude_spectrum[y][x]),int(magnitude_spectrum[y][x]),int(magnitude_spectrum[y][x]))
-    def image_dct(self):
-        self.rgb2gray()
-        p=np.zeros((self.height,self.width))
+                self.bitmap[y][x]=(int(magnitude_spectrumb[y][x]),int(magnitude_spectrumg[y][x]),int(magnitude_spectrumr[y][x]))
+    def image_ifft(self):
+        pb = np.fft.ifft2(self.b)
+        pg = np.fft.ifft2(self.g)
+        pr = np.fft.ifft2(self.r)
         for y in xrange(self.height):
             for x in xrange(self.width):
-                p[y][x]=self.bitmap[y][x][0]
+                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
+    def image_dct(self):
+        b=np.zeros((self.height,self.width))
+        g=np.zeros((self.height,self.width))
+        r=np.zeros((self.height,self.width))
+        for y in xrange(self.height):
+            for x in xrange(self.width):
+                b[y][x]=self.bitmap[y][x][0]
+                g[y][x]=self.bitmap[y][x][1]
+                r[y][x]=self.bitmap[y][x][2]
+        self.b= dct(dct(b.T).T)
+        self.g= dct(dct(g.T).T)
+        self.r= dct(dct(r.T).T)
+        magnitude_spectrumb = 20*np.log(np.abs(self.b))
+        magnitude_spectrumg= 20*np.log(np.abs(self.g))
+        magnitude_spectrumr = 20*np.log(np.abs(self.r))
+        pl.show()
+        for y in xrange(self.height):
+            for x in xrange(self.width):
+                self.bitmap[y][x]=(int(magnitude_spectrumb[y][x]),int(magnitude_spectrumg[y][x]),int(magnitude_spectrumr[y][x]))
+    def image_idct(self):
+        pb =  idct(idct(self.b.T).T)
+        pg =  idct(idct(self.g.T).T)
+        pr =  idct(idct(self.r.T).T)
+        for y in xrange(self.height):
+            for x in xrange(self.width):
+                self.bitmap[y][x]=(int(pb[y][x]/(4*self.width*self.height)),int(pg[y][x]/(4*self.width*self.height)),int(pr[y][x]/(4*self.width*self.height)))
+    #def Ideal_LPF(self):
+    def Ideal_LPF(self,d=50):
+        b=np.zeros((self.height,self.width))
+        g=np.zeros((self.height,self.width))
+        r=np.zeros((self.height,self.width))
+        for y in range(self.height):
+            for x in xrange(self.width):
+                if sqrt((y-self.height/2)**2+(x-self.width/2)**2)<d:
+                    b[y][x]=1
+                    g[y][x]=1
+                    r[y][x]=1
+        fshiftb = np.fft.fftshift(self.b)
+        fshiftg= np.fft.fftshift(self.g)
+        fshiftr = np.fft.fftshift(self.r)
+        fb=np.multiply(fshiftb,b);
+        fg=np.multiply(fshiftg,g);
+        fr=np.multiply(fshiftr,r);
+        fb_=np.fft.ifftshift(fb)
+        fg_=np.fft.ifftshift(fg)
+        fr_=np.fft.ifftshift(fr)
+        pb = np.fft.ifft2(fb_)
+        pg = np.fft.ifft2(fg_)
+        pr = np.fft.ifft2(fr_)
+        for y in xrange(self.height):
+            for x in xrange(self.width):
+                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
+                
+    def butterworth_LPF(self,n=3,d=50):
+        b=np.zeros((self.height,self.width))
+        g=np.zeros((self.height,self.width))
+        r=np.zeros((self.height,self.width))
+        for y in range(self.height):
+            for x in xrange(self.width):
+                b[y][x]=1.0/(1+(sqrt((y-self.height/2)**2+(x-self.width/2)**2)/d)**(2*n))
+                g[y][x]=b[y][x]
+                r[y][x]=b[y][x]
+        fshiftb = np.fft.fftshift(self.b)
+        fshiftg= np.fft.fftshift(self.g)
+        fshiftr = np.fft.fftshift(self.r)
+        fb=np.multiply(fshiftb,b);
+        fg=np.multiply(fshiftg,g);
+        fr=np.multiply(fshiftr,r);
+        fb_=np.fft.ifftshift(fb)
+        fg_=np.fft.ifftshift(fg)
+        fr_=np.fft.ifftshift(fr)
+        pb = np.fft.ifft2(fb_)
+        pg = np.fft.ifft2(fg_)
+        pr = np.fft.ifft2(fr_)
+        for y in xrange(self.height):
+            for x in xrange(self.width):
+                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
+    def Gauss_LPF(self,d=50):
+        b=np.zeros((self.height,self.width))
+        g=np.zeros((self.height,self.width))
+        r=np.zeros((self.height,self.width))
+        for y in range(self.height):
+            for x in xrange(self.width):
+                b[y][x]=exp(-(((y-self.height/2)**2+(x-self.width/2)**2))/(2*d**2))
+                g[y][x]=b[y][x]
+                r[y][x]=b[y][x]
+        fshiftb = np.fft.fftshift(self.b)
+        fshiftg= np.fft.fftshift(self.g)
+        fshiftr = np.fft.fftshift(self.r)
+        fb=np.multiply(fshiftb,b);
+        fg=np.multiply(fshiftg,g);
+        fr=np.multiply(fshiftr,r);
+        fb_=np.fft.ifftshift(fb)
+        fg_=np.fft.ifftshift(fg)
+        fr_=np.fft.ifftshift(fr)
+        pb = np.fft.ifft2(fb_)
+        pg = np.fft.ifft2(fg_)
+        pr = np.fft.ifft2(fr_)
+        for y in xrange(self.height):
+            for x in xrange(self.width):
+                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
+    def exponential_LPF(self,n=3,d=50):
+        b=np.zeros((self.height,self.width))
+        g=np.zeros((self.height,self.width))
+        r=np.zeros((self.height,self.width))
+        for y in range(self.height):
+            for x in xrange(self.width):
+                d0=sqrt((y-self.height/2)**2+(x-self.width/2)**2)
+                b[y][x]=exp(-(d0/d)**n)
+                g[y][x]=b[y][x]
+                r[y][x]=b[y][x]
+        fshiftb = np.fft.fftshift(self.b)
+        fshiftg= np.fft.fftshift(self.g)
+        fshiftr = np.fft.fftshift(self.r)
+        fb=np.multiply(fshiftb,b);
+        fg=np.multiply(fshiftg,g);
+        fr=np.multiply(fshiftr,r);
+        fb_=np.fft.ifftshift(fb)
+        fg_=np.fft.ifftshift(fg)
+        fr_=np.fft.ifftshift(fr)
+        pb = np.fft.ifft2(fb_)
+        pg = np.fft.ifft2(fg_)
+        pr = np.fft.ifft2(fr_)
+        for y in xrange(self.height):
+            for x in xrange(self.width):
+                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
+                
+                
+    def Ideal_HPF(self,d=50):
+        b=np.ones((self.height,self.width))
+        g=np.ones((self.height,self.width))
+        r=np.ones((self.height,self.width))
+        for y in range(self.height):
+            for x in xrange(self.width):
+                if sqrt((y-self.height/2)**2+(x-self.width/2)**2)<d:
+                    b[y][x]=0
+                    g[y][x]=0
+                    r[y][x]=0
+        fshiftb = np.fft.fftshift(self.b)
+        fshiftg= np.fft.fftshift(self.g)
+        fshiftr = np.fft.fftshift(self.r)
+        fb=np.multiply(fshiftb,b);
+        fg=np.multiply(fshiftg,g);
+        fr=np.multiply(fshiftr,r);
+        fb_=np.fft.ifftshift(fb)
+        fg_=np.fft.ifftshift(fg)
+        fr_=np.fft.ifftshift(fr)
+        pb = np.fft.ifft2(fb_)
+        pg = np.fft.ifft2(fg_)
+        pr = np.fft.ifft2(fr_)
+        for y in xrange(self.height):
+            for x in xrange(self.width):
+                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
+    def butterworth_HPF(self,n=3,d=50):
+        b=np.zeros((self.height,self.width))
+        g=np.zeros((self.height,self.width))
+        r=np.zeros((self.height,self.width))
+        for y in range(self.height):
+            for x in xrange(self.width):
+                d0=sqrt((y-self.height/2)**2+(x-self.width/2)**2)
+                if y==self.height/2  and x==self.width/2:
+                    d0=1
+                b[y][x]=1.0/(1+(d/d0)**(2*n))
+                g[y][x]=b[y][x]
+                r[y][x]=b[y][x]
+        fshiftb = np.fft.fftshift(self.b)
+        fshiftg= np.fft.fftshift(self.g)
+        fshiftr = np.fft.fftshift(self.r)
+        fb=np.multiply(fshiftb,b);
+        fg=np.multiply(fshiftg,g);
+        fr=np.multiply(fshiftr,r);
+        fb_=np.fft.ifftshift(fb)
+        fg_=np.fft.ifftshift(fg)
+        fr_=np.fft.ifftshift(fr)
+        pb = np.fft.ifft2(fb_)
+        pg = np.fft.ifft2(fg_)
+        pr = np.fft.ifft2(fr_)
+        for y in xrange(self.height):
+            for x in xrange(self.width):
+                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
+    def exponential_HPF(self,n=3,d=50):
+        b=np.zeros((self.height,self.width))
+        g=np.zeros((self.height,self.width))
+        r=np.zeros((self.height,self.width))
+        for y in range(self.height):
+            for x in xrange(self.width):
+                d0=sqrt((y-self.height/2)**2+(x-self.width/2)**2)
+                if y==self.height/2  and x==self.width/2:
+                    d0=1
+                b[y][x]=exp(-(d/d0)**n)
+                g[y][x]=b[y][x]
+                r[y][x]=b[y][x]
+        fshiftb = np.fft.fftshift(self.b)
+        fshiftg= np.fft.fftshift(self.g)
+        fshiftr = np.fft.fftshift(self.r)
+        fb=np.multiply(fshiftb,b);
+        fg=np.multiply(fshiftg,g);
+        fr=np.multiply(fshiftr,r);
+        fb_=np.fft.ifftshift(fb)
+        fg_=np.fft.ifftshift(fg)
+        fr_=np.fft.ifftshift(fr)
+        pb = np.fft.ifft2(fb_)
+        pg = np.fft.ifft2(fg_)
+        pr = np.fft.ifft2(fr_)
+        for y in xrange(self.height):
+            for x in xrange(self.width):
+                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
+    def Gauss_HPF(self,d=50):
+        b=np.zeros((self.height,self.width))
+        g=np.zeros((self.height,self.width))
+        r=np.zeros((self.height,self.width))
+        for y in range(self.height):
+            for x in xrange(self.width):
+                b[y][x]=1-exp(-(((y-self.height/2)**2+(x-self.width/2)**2))/(2*d**2))
+                g[y][x]=b[y][x]
+                r[y][x]=b[y][x]
+        fshiftb = np.fft.fftshift(self.b)
+        fshiftg= np.fft.fftshift(self.g)
+        fshiftr = np.fft.fftshift(self.r)
+        fb=np.multiply(fshiftb,b);
+        fg=np.multiply(fshiftg,g);
+        fr=np.multiply(fshiftr,r);
+        fb_=np.fft.ifftshift(fb)
+        fg_=np.fft.ifftshift(fg)
+        fr_=np.fft.ifftshift(fr)
+        pb = np.fft.ifft2(fb_)
+        pg = np.fft.ifft2(fg_)
+        pr = np.fft.ifft2(fr_)
+        for y in xrange(self.height):
+            for x in xrange(self.width):
+                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
 if __name__ == '__main__':
     img =readImg('../bear.bmp')
     img.create_bitmap()
@@ -477,16 +711,19 @@ if __name__ == '__main__':
     #print img.height
     #img.rgb2gray()
     #img.resize_nearest(100,100)
-    #img.resize_bilinear(100,100)
+    #img.resize_bilinear(500,500)
     #img.rotate()
     #img.Smooth_LPF()
     #img.resize_nearest()
     #img.cut((50,50),(10,10))
     #img.resize_bilinear()
     #img.rotate()
-    #img.Smooth_midvaule()
+    img.Smooth_midvaule()
     #img.Sharpen_HPF()
-    img.image_fft()
+    #img.image_dct()
+    #img.image_idct()
+    #img.image_fft()
+    #img.Gauss_HPF()
     #img.Sharpen_GFF()
     #img.Sharpen_Roberts()
     #img.Sharpen_Prewitt()
@@ -494,4 +731,5 @@ if __name__ == '__main__':
     #img.Sharpen_Laplacian()
     #img.move(distance=40, direction=HORIZONTAL)
     #img.plot_hist()    
+    #img.image_dct()
     img.save_to(filename="../out6.bmp")
