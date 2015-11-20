@@ -7,9 +7,9 @@ import copy
 import pylab as pl
 from math import ceil, sqrt, exp
 import numpy as np
-import random
 from scipy.fftpack import dct,idct
 import time
+import constfile
 
 FORMAT_OFFSET = int('0',16)
 SIZE_OFFSET = int('2',16)
