@@ -9,7 +9,6 @@ from math import ceil, sqrt, exp
 import numpy as np
 from scipy.fftpack import dct,idct
 import time
-import constfile
 
 FORMAT_OFFSET = int('0',16)
 SIZE_OFFSET = int('2',16)
@@ -731,10 +730,11 @@ class readImg:
 
 
 if __name__ == '__main__':
-    img =readImg('../bear1107.bmp')
-    t1 = time.time()
-    img.resize_bilinear()
-    print time.time() - t1
+    pass
+    # img =readImg('../bear1107.bmp')
+    # t1 = time.time()
+    # img.resize_bilinear()
+    # print time.time() - t1
 
     #img.save_to(filename="../bear1107.bmp", data = bitmap)
 

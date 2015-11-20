@@ -1,4 +1,8 @@
 ## Pixel
+软件界面：
+
+![GUI](./homepage.png)
+
 - 语言： Python2.7
 - 使用到的库: wxpython numpy matplotlib等
 - 测试通过平台：Max OS 、 Ubuntu
