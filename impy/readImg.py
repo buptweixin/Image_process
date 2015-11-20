@@ -1,735 +1,525 @@
 #encoding=utf-8
+__author__ = 'weixin'
 
-import struct
-from math import ceil
-from math import cos
-from math import sin
-from math import pi,sqrt,exp
-from scipy.fftpack import dct,idct
-import StringIO
+import wx
+import wx.lib.imagebrowser as imagebrowser
+import os
+
+import matplotlib
+matplotlib.use('WXAgg')
+from impy import imglib
+from matplotlib.figure import Figure
 import numpy as np
-import pylab as pl
-import copy
+from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
 
-FORMAT_OFFSET = int('0',16)
-SIZE_OFFSET = int('2',16)
-DATA_OFFSET = int('0a', 16)
-WIDTH_OFFSET = int('12',16)
-HEIGHT_OFFSET = int('16',16)
-BPP_OFFSET = int('1c',16)
-HORIZONTAL = 0
-VERTICAL = 1
+class guiFrame(wx.Frame):
+    def __init__(self, parent):
+        self.title = "Pixel"
+        super(guiFrame, self).__init__(parent, -1, self.title, size=(1200, 720))
+        self.sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.panel = wx.Panel(self, size = (self.Size[0]*2/3, self.Size[1]-20))
+        self.panel.SetBackgroundColour("WHITE")
+        self.sizer.Add(self.panel, 1, wx.LEFT | wx.TOP | wx.EXPAND, border = 1)
+        self.noteBook = self.createNotebook()
+        self.createHistPanel()
+        self.sizer.Add(self.noteBook,1,wx.RIGHT|wx.TOP|wx.EXPAND, border = 1)
+        self.createToolBar()
+        self.initStatusBar()
+        self.createMenuBar()
+        self.direction = u'水平'
+        self.method = u"双线性"
+        self.filtermethod = u"理想"
+        self.filename = './bear1107.bmp'
+        self.openBMP()
 
-class readImg:
-    def __init__(self, filename):
-        '''Main class to open and edit a 24 bits bmp image'''
-        
-        bmpfile = open(filename)
-        self.raw_data = bmpfile.read()
-        self.times = 0
-        self.b=np.array([])
-        self.g=np.array([])
-        self.r=np.array([])
-        bmpfile.close()
+    def createMenuItem(self, menu, label, status, handler, kind=wx.ITEM_NORMAL):
+        if not label:
+            menu.AppendSeparator()
+            return
+        menuItem = menu.Append(-1, label, status, kind) #4 创建菜单项
+        self.Bind(wx.EVT_MENU, handler, menuItem)
 
-        self.width = struct.unpack_from("<i", self.raw_data, WIDTH_OFFSET)[0]
-        self.height = struct.unpack_from("<i", self.raw_data, HEIGHT_OFFSET)[0]
-        self.data_offset = ord(self.raw_data[DATA_OFFSET])
-        self.bpp = ord(self.raw_data[BPP_OFFSET])  # Bits Per Pixel
-        self.bitmap = []
+    def createMenu(self, menuData):
+        menu = wx.Menu()
+        # 3 创建子菜单
+        for eachItem in menuData:
+            if len(eachItem) == 2:
+                label = eachItem[0]
+                subMenu = self.createMenu(eachItem[1])
+                menu.AppendMenu(wx.NewId(), label, subMenu)
 
-        if self.raw_data[0] != "B" and self.raw_data[1] != "M":
-            raise TypeError, "Not a BMP file!"
-        if self.bpp != 24:
-            raise TypeError, "Not a 24 bits BMP file"
-            
-        #self.rotateBitmap =  dxd
-
-
-
-    def create_bitmap(self):
-        '''Creates the bitmap from the raw_data'''
-
-        off = self.data_offset
-        width_bytes = self.width*(self.bpp/8)
-        rowstride = ceil(width_bytes/4.0)*4
-        padding = int(rowstride - width_bytes)
-
-        for y in xrange(self.height):
-            self.bitmap.append([])
-
-            for x in xrange(self.width):
-                b = ord(self.raw_data[off])
-                g = ord(self.raw_data[off+1])
-                r = ord(self.raw_data[off+2])
-
-                off = off+3
-
-                self.bitmap[y].append([r, g, b])
-
-            off += padding
-
-        self.bitmap = self.bitmap[::-1]
-        self.bitmap_backup = copy.deepcopy(self.bitmap)
-
-    def save_to(self, filename):
-        '''Export the bmp saving the changes done to the bitmap'''
-
-        raw_copy = StringIO.StringIO()
-        bitmap = self.bitmap[::-1]
-
-        width_bytes = self.width*(self.bpp/8)
-        rowstride = ceil(width_bytes/4.0)*4
-        padding = int(rowstride - width_bytes)
-
-        # Same header as before until the width
-        raw_copy.write(self.raw_data[:WIDTH_OFFSET])
-
-        s = struct.Struct("<i")
-        _w = s.pack(self.width)   # Transform width, height to
-        _h = s.pack(self.height)  # little indian format
-        raw_copy.write(_w)
-        raw_copy.write(_h)
-
-        # After the new width and height the header it's the same
-        raw_copy.write(self.raw_data[HEIGHT_OFFSET+4:self.data_offset])
-
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                r, g, b = bitmap[y][x]
-
-                # Out of range control
-                if r > 255: r = 255
-                if g > 255: g = 255
-                if b > 255: b = 255
-                if r < 0: r = 0
-                if g < 0: g = 0
-                if b < 0: b = 0
-
-                #Char transformation
-                r = chr(r)
-                g = chr(g)
-                b = chr(b)
-
-                raw_copy.write(b + g + r)
-
-            raw_copy.write(chr(0)*padding)
-
-        self.raw_data = raw_copy.getvalue()
-
-        f = open(filename, "w")
-        f.write(self.raw_data)
-        f.close()
-        f.close()
-
-    def rgb2gray(self):
-        for y in range(self.height):
-            for x in range(self.width):
-                try:
-                    mean = sum(self.bitmap[y][x])/3
-                    colour = (mean, mean, mean)
-                    self.bitmap[y][x] = colour
-                except IndexError as e:
-                    continue
-
-    def mirror(self, direction = HORIZONTAL):
-        if direction == HORIZONTAL:
-            for y in xrange(self.height):
-                self.bitmap[y] = self.bitmap[y][::-1]
-        elif direction == VERTICAL:
-            self.bitmap= self.bitmap[::-1]
-
-    def move(self, distance = 0, direction = HORIZONTAL):
-        if distance > 0:
-            self.bitmap[:][distance:self.width] = self.bitmap[:][:self.width - distance]
-
-    def cut(self,point1=(0,0),point2=(100,100)):
-        new_height=abs(point2[0]-point1[0])
-        new_width=abs(point2[1]-point1[1])
-        len_y=min(point1[0],point2[0])
-        len_x1=min(point1[1],point2[1])
-        len_x2=max(point1[1],point2[1])
-        new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
-        for y in xrange(new_height):
-            new_bitmap[y][:new_width]=self.bitmap[y+len_y][len_x1:len_x2]
-        self.bitmap=new_bitmap[:]
-        self.height=new_height
-        self.width=new_width
-
-    def resize_nearest(self,new_height=100,new_width=100):
-        fh=float(self.height)/new_height
-        fw=float(self.width)/new_width
-        new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
-        for y in xrange(new_height):
-            i=int(round(y*fh))
-            for x in xrange(new_width):
-                j=int(round(x*fw))
-                new_bitmap[y][x]=self.bitmap[i][j]
-        self.bitmap=new_bitmap[:]
-        self.height=new_height
-        self.width=new_width
-        
-        
-    def resize_bilinear(self,new_height=100,new_width=100):
-        fh=float(self.height)/new_height
-        fw=float(self.width)/new_width
-        new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
-        for y in xrange(new_height):
-            y0=y*fh
-            y1=int(y0)
-            if y1==self.height-1:
-                y2=y1
             else:
-                y2=y1+1
-            fy1=y1-y0
-            fy2=1-fy1
+                self.createMenuItem(menu, *eachItem)
+        return menu
 
-            for x in xrange(new_width):
-                x0=x*fw
-                x1=int(x0)
-                if x1==self.width-1:
-                    x2=x1
-                else:
-                    x2=x1+1
-                fx1=x1-x0
-                fx2=1-fx1
-                s1=fx2*fy2
-                s2=fx1*fy2
-                s3=fx1*fy1
-                s4=fx2*fy1
-                p1=np.array(self.bitmap[y1][x1])
-                p2=np.array(self.bitmap[y1][x2])
-                p3=np.array(self.bitmap[y2][x1])
-                p4=np.array(self.bitmap[y2][x2])
-                p=(p1*s1+p2*s2+p3*s3+p4*s4).astype(np.int)
-                new_bitmap[y][x]=tuple(p)
-        self.bitmap=new_bitmap[:]
-        self.height=new_height
-        self.width=new_width
+    def createMenuBar(self):
+        menuBar = wx.MenuBar()
+        for eachMenuData in self.menuData():
+            menuLabel = eachMenuData[0]
+            menuItems = eachMenuData[1]
+            menuBar.Append(self.createMenu(menuItems), menuLabel)
+        self.SetMenuBar(menuBar)
 
-    def rotate(self,angle=30):
-        theta=pi*angle/180
-        new_width  =self.width
-        new_height = self.height
-        new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
-        dx = -0.5*new_width*cos(theta) - 0.5*new_height*sin(theta) + 0.5*self.width
-        dy = 0.5*new_width*sin(theta) - 0.5*new_height*cos(theta) + 0.5*self.height
-        for i in xrange(new_height):
-            for j in xrange(new_width):
-                x = float(j)*cos(theta) + float(i)*sin(theta) + dx 
-                y = float(-j)*sin(theta) + float(i)*cos(theta) + dy
-                if (x<0)or(x>self.width)or(y<0)or(y>self.height):
-                    new_bitmap[i][j]=(0,0,0)
-                else:
-                    new_bitmap[i][j]=self.bitmap_backup[int(y)][int(x)]
-        self.bitmap=new_bitmap[:]
-        self.height=new_height
-        self.width=new_width
-        self.times += 1
-        
-    def Smooth_LPF(self,m=1):
-        new_width=self.width
-        new_height=self.height
-        new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
-        p=np.array([0,0,0])
-        a=0
-        for y in xrange(new_height):
-            for x in xrange(new_width):
-                print a
-                a=a+1
-                if(y-m<1)or(x-m<1)or(y+m>new_height-1)or(x+m>new_width-1):
-                    new_bitmap[y][x]=self.bitmap[y][x]
-                else:
-                    for i in xrange (2*m+1):
-                        for j in xrange (2*m+1):
-                            p=p+np.array(self.bitmap[y-m+i][x-m+j])
-                    p=p/((2*m+1)**2)
-                    new_bitmap[y][x]=tuple(p)
-        self.bitmap=new_bitmap[:]
-        self.height=new_height
-        self.width=new_width
-        
-        
-    def Smooth_midvaule(self,m=1):
-        new_width=self.width
-        new_height=self.height
-        new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
-        n=(2*m+1)**2
-        mid=(n-1)/2
-        p=np.array([0,0,0])
-        b=np.ones(n)
-        g=np.ones(n)
-        r=np.ones(n)
-        for y in xrange(new_height):
-            for x in xrange(new_width):
-                if (y-m<1)or(x-m<1)or(y+m>new_height-1)or(x+m>new_width-1):
-                    new_bitmap[y][x]=self.bitmap[y][x]
-                else:
-                    for i in xrange (2*m+1):
-                        for j in xrange (2*m+1):
-                            p=np.array(self.bitmap[y-m+i][x-m+j])
-                            #print 'b'
-                            b[(2*m+1)*i+j]=p[0]
-                            #print 'g'
-                            g[(2*m+1)*i+j]=p[1]
-                            #print 'r'
-                            r[(2*m+1)*i+j]=p[2]
-                    #p=(int(np.median(b)),int(np.median(g)),int(np.median(r)))
-                    b=sorted(b)
-                    g=sorted(g)
-                    r=sorted(r)
-                    p=(int(b[mid]),int(g[mid]),int(r[mid]))
-                    new_bitmap[y][x]=p
-        self.bitmap=new_bitmap[:]
-        self.height=new_height
-        self.width=new_width
+    def getToolbarData(self):
+        return [
+            ["./icons/mirror_hor.png", u"水平翻转", self.OnMirrorHor],
+            ["./icons/mirror_ver.png", u"垂直翻转", self.OnMirrorVer],
+            ["./icons/move.png", u"移动图片", self.OnClickMoveBtn],
+            ["./icons/cut.png", u"裁剪图片", self.OnClickCutBtn],
+            [[u'双线性',u'最近邻'],self.OnSelecteZoomMethod],
+            ["./icons/zoomin.png", u"放大", self.OnZoomIn],
+            ["./icons/zoomout.png", u"缩小", self.OnZoomOut],
+            ["./icons/rotate.png", u"旋转", self.OnRotate],
+            ["./icons/OK.png", u"确定", self.OnOK]
+        ]
 
-    def  Sharpen_HPF(self,m=1):
-        new_width=self.width
-        new_height=self.height
-        new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
-        p=np.array([0,0,0])
-        a=0
-        for y in xrange(new_height):
-            for x in xrange(new_width):
-                print a
-                a=a+1
-                if(y-m<0)or(x-m<0)or(y+m>new_height-1)or(x+m>new_width-1):
-                    new_bitmap[y][x]=self.bitmap[y][x]
-                else:
-                    p=(((2*m+1)**2)-1)*np.array(self.bitmap[y][x])
-                    for i in xrange (2*m+1):
-                        for j in xrange (2*m+1):
-                            if (i==m) and  (j==m) :
-                                continue
-                            p=p-np.array(self.bitmap[y-m+i][x-m+j])
-                    new_bitmap[y][x]=tuple(p)
-        self.bitmap=new_bitmap[:]
-        self.height=new_height
-        self.width=new_width
-        
-        
-    def  Sharpen_GFF(self,m=1,A=1.8):
-        new_width=self.width
-        new_height=self.height
-        new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
-        p=np.array([0,0,0])
-        a=0
-        for y in xrange(new_height):
-            for x in xrange(new_width):
-                print a
-                a=a+1
-                if(y-m<0)or(x-m<0)or(y+m>new_height-1)or(x+m>new_width-1):
-                    p=(A)*np.array(self.bitmap[y][x])
-                    p = p.astype(np.int)
-                    new_bitmap[y][x]=tuple(p)
-                else:
-                    p=(((2*m+1)**2)-1)*np.array(self.bitmap[y][x])
-                    for i in xrange (2*m+1):
-                        for j in xrange (2*m+1):
-                            if (i==m) and  (j==m) :
-                                continue
-                            p=p-np.array(self.bitmap[y-m+i][x-m+j])
-                    p=(A-1)*np.array(self.bitmap[y][x])+p
-                    p = p.astype(np.int)
-                    new_bitmap[y][x]=tuple(p)
-        self.bitmap=new_bitmap[:]
-        self.height=new_height
-        self.width=new_width
-       
-       
-       
-    def  Sharpen_Roberts(self):
-        new_width=self.width
-        new_height=self.height
-        new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
-        p=np.array([0,0,0])
-        for y in xrange(new_height):
-            for x in xrange(new_width):
-                if (y==new_height-1)or(x==new_width-1):
-                    new_bitmap[y][x]=np.array(self.bitmap[y][x])
-                else:
-                    p=abs(np.array(self.bitmap[y][x])-np.array(self.bitmap[y+1][x+1]))+\
-                    abs(np.array(self.bitmap[y][x+1])-np.array(self.bitmap[y+1][x]))
-                    #p = p.astype(np.int)
-                    new_bitmap[y][x]=tuple(p)
-        self.bitmap=new_bitmap[:]
-        self.height=new_height
-        self.width=new_width
+    def createToolBar(self):
+        self.toolbar = self.CreateToolBar()
+        data = self.getToolbarData()
+        for item in data:
+            if len(item) == 3:
+                icon = wx.Image(item[0], wx.BITMAP_TYPE_ANY).ConvertToBitmap()
+                toolbtn = wx.BitmapButton(self.toolbar, wx.NewId(), bitmap = icon)
+                toolbtn.Bind(wx.EVT_BUTTON, item[2])
+                toolbtn.SetHelpText(item[1])
+                self.toolbar.AddControl(toolbtn)
+            else:
+                choice = wx.Choice(self.toolbar, choices=item[0])
+                choice.Bind(wx.EVT_CHOICE, item[1])
+                self.toolbar.AddControl(choice)
+        cancelBtn = wx.Button(self.toolbar, wx.NewId(), label = u"还原")
+        cancelBtn.Bind(wx.EVT_BUTTON, self.OnCancel)
+        self.toolbar.AddControl(cancelBtn)
+
+        self.toolItems = self.toolbar.GetChildren()
+        self.moveBtn = self.toolItems[2]
+        self.cutBtn = self.toolItems[3]
+        self.OKBtn = self.toolItems[8]
+        self.OKBtn.Show(False)
+        self.choice = self.toolItems[4]
+        #self.smoothMethod = self.choice
+        self.toolbar.Realize()
+
+##########################
+###
+###     创建右侧控制菜单
+###
+#########################
+
+    def createNotebook(self):
+        notebook = wx.Notebook(self, pos=(self.panel.Size[0], 0),\
+                               size = (self.Size[0]-self.panel.Size[0], self.panel.Size[1]*3/5))
+        panels = self.createPanels(notebook, notebook.Size)
+        labels = self.getPanellabel()
+        for item, panel in enumerate(panels):
+            notebook.AddPage(panel, labels[item])
+        return notebook
+
+    def createHistPanel(self):
+        self.histpanel = histPanel(self, style = wx.BORDER|wx.SOLID, pos = (self.panel.Size[0], self.panel.Size[1]/2 + 30), size = (self.noteBook.Size[0], self.panel.Size[1]/2))
+        histEqualizationBtn = wx.Button(self.histpanel, label=u"均衡化", pos=(100, 0))
+        histEqualizationBtn.Bind(wx.EVT_BUTTON, self.OnHistEqu)
+        self.histpanel.hsizer.Add(histEqualizationBtn,1, wx.RIGHT, border=1)
+        self.histpanel.vsizer.Add(self.histpanel.hsizer)
+        self.histpanel.SetSizerAndFit(self.histpanel.vsizer)
 
 
-    def  Sharpen_Prewitt(self):
-        new_width=self.width
-        new_height=self.height
-        new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
-        p=np.array([0,0,0])
-        for y in xrange(new_height):
-            for x in xrange(new_width):
-                if (y==new_height-1)or(x==new_width-1)or(y==0)or(x==0):
-                    new_bitmap[y][x]=np.array(self.bitmap[y][x])
-                else:
-                    p=abs(np.array(self.bitmap[y-1][x-1])+np.array(self.bitmap[y-1][x])+np.array(self.bitmap[y-1][x+1])\
-                    -np.array(self.bitmap[y+1][x-1])-np.array(self.bitmap[y+1][x])-np.array(self.bitmap[y+1][x+1]))+\
-                    abs(np.array(self.bitmap[y-1][x+1])+np.array(self.bitmap[y][x+1])+np.array(self.bitmap[y+1][x+1])\
-                    -np.array(self.bitmap[y-1][x-1])-np.array(self.bitmap[y][x-1])-np.array(self.bitmap[y+1][x-1]))
-                    #p = p.astype(np.int)
-                    new_bitmap[y][x]=tuple(p)
-        self.bitmap=new_bitmap[:]
-        self.height=new_height
-        self.width=new_width        
+    def getData(self):
+        return [
+            [
+                [['label', u'空域滤波']],
+                [['choices', [u"低通滤波", u"中值滤波"], self.OnSmoothMethod],['button', u'平滑',self.OnSmooth]],
+                [['choices', [u"高通滤波", u"高增益滤波", u"Roberts算子", u"Prewitt算子", u"Sobel算子", u"Laplacian算子"],self.OnSharpenMethod],['button', u'锐化', self.OnSharpen]],
+		[['label', u"变换\反变换"]],
+                [['button', u'傅里叶', self.OnFourier], ['button', u'离散余弦', self.OnCos]],
+                [['button', u'傅里叶反变换', self.OnFourierInv], ['button', u'离散余弦反变换', self.OnCosInv]],
+                [['choices', [u"理想滤波器", u"巴特沃斯滤波器", u"高斯滤波器", u"指数滤波器"], self.OnFilterChoice],
+                ['slider',[10, 0, 50]]],
+                [['button', u'低通滤波', self.OnLowPass], ['button', u'高通滤波', self.OnHighPass]]
+            ],
+            [
+                [['label', u'图像检索'],['button' ,u'选择文件夹', self.OnSearchSimilarImg], ['label', u'similarImg']]
+            ]
+                ]
 
 
-    def  Sharpen_Sobel(self):
-        new_width=self.width
-        new_height=self.height
-        new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
-        p=np.array([0,0,0])
-        for y in xrange(new_height):
-            for x in xrange(new_width):
-                if (y==new_height-1)or(x==new_width-1)or(y==0)or(x==0):
-                    new_bitmap[y][x]=np.array(self.bitmap[y][x])
-                else:
-                    p=abs(np.array(self.bitmap[y-1][x-1])+2*np.array(self.bitmap[y-1][x])+np.array(self.bitmap[y-1][x+1])\
-                    -np.array(self.bitmap[y+1][x-1])-2*np.array(self.bitmap[y+1][x])-np.array(self.bitmap[y+1][x+1]))+\
-                    abs(np.array(self.bitmap[y-1][x+1])+2*np.array(self.bitmap[y][x+1])+np.array(self.bitmap[y+1][x+1])\
-                    -np.array(self.bitmap[y-1][x-1])-2*np.array(self.bitmap[y][x-1])-np.array(self.bitmap[y+1][x-1]))
-                    #p = p.astype(np.int)
-                    new_bitmap[y][x]=tuple(p)
-        self.bitmap=new_bitmap[:]
-        self.height=new_height
-        self.width=new_width   
-        
-        
-    def  Sharpen_Laplacian(self):
-        new_width=self.width
-        new_height=self.height
-        new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
-        p=np.array([0,0,0])
-        for y in xrange(new_height):
-            for x in xrange(new_width):
-                if (y==new_height-1)or(x==new_width-1)or(y==0)or(x==0):
-                    new_bitmap[y][x]=np.array(self.bitmap[y][x])
-                else:
-                    p=4*np.array(self.bitmap[y][x])-np.array(self.bitmap[y-1][x])-\
-                    np.array(self.bitmap[y+1][x])-np.array(self.bitmap[y][x-1])-\
-                    np.array(self.bitmap[y][x+1])
-                    #p = p.astype(np.int)
-                    new_bitmap[y][x]=tuple(p)
-        self.bitmap=new_bitmap[:]
-        self.height=new_height
-        self.width=new_width
-        
-        
-    def plot_hist(self):
-        self.rgb2gray()
-        b=np.zeros((self.height,self.width))
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                b[y][x]=self.bitmap[y][x][0]
-        b.shape=(self.height*self.width)
-        pl.figure
-        fb=pl.hist(b,256,range=(0,255),facecolor='blue')
-        pl.show()
-        fre_b=np.array(fb[0])/(self.height*self.width)
-        sum_b=np.zeros(256)
-        for i in xrange(256):
-            sum_b[i]=sum(fre_b[0:i+1])
-        new_width=self.width
-        new_height=self.height
-        new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                new_bitmap[y][x]=(int (sum_b[self.bitmap_backup[y][x][0]]*255+0.5),\
-                int (sum_b[self.bitmap_backup[y][x][1]]*255+0.5),\
-                int (sum_b[self.bitmap_backup[y][x][2]]*255+0.5))
-        self.bitmap=new_bitmap[:]
 
-    def image_fft(self):
-        b=np.zeros((self.height,self.width))
-        g=np.zeros((self.height,self.width))
-        r=np.zeros((self.height,self.width))
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                b[y][x]=self.bitmap[y][x][0]
-                g[y][x]=self.bitmap[y][x][1]
-                r[y][x]=self.bitmap[y][x][2]
-        self.b= np.fft.fft2(b)
-        self.g= np.fft.fft2(g)
-        self.r= np.fft.fft2(r)
-        fshiftb = np.fft.fftshift(self.b)
-        fshiftg= np.fft.fftshift(self.g)
-        fshiftr = np.fft.fftshift(self.r)
-        magnitude_spectrumb = 20*np.log(np.abs(fshiftb))
-        magnitude_spectrumg= 20*np.log(np.abs(fshiftg))
-        magnitude_spectrumr = 20*np.log(np.abs(fshiftr))
-        pl.show()
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                self.bitmap[y][x]=(int(magnitude_spectrumb[y][x]),int(magnitude_spectrumg[y][x]),int(magnitude_spectrumr[y][x]))
-    def image_ifft(self):
-        pb = np.fft.ifft2(self.b)
-        pg = np.fft.ifft2(self.g)
-        pr = np.fft.ifft2(self.r)
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
-    def image_dct(self):
-        b=np.zeros((self.height,self.width))
-        g=np.zeros((self.height,self.width))
-        r=np.zeros((self.height,self.width))
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                b[y][x]=self.bitmap[y][x][0]
-                g[y][x]=self.bitmap[y][x][1]
-                r[y][x]=self.bitmap[y][x][2]
-        self.b= dct(dct(b.T).T)
-        self.g= dct(dct(g.T).T)
-        self.r= dct(dct(r.T).T)
-        magnitude_spectrumb = 20*np.log(np.abs(self.b))
-        magnitude_spectrumg= 20*np.log(np.abs(self.g))
-        magnitude_spectrumr = 20*np.log(np.abs(self.r))
-        pl.show()
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                self.bitmap[y][x]=(int(magnitude_spectrumb[y][x]),int(magnitude_spectrumg[y][x]),int(magnitude_spectrumr[y][x]))
-    def image_idct(self):
-        pb =  idct(idct(self.b.T).T)
-        pg =  idct(idct(self.g.T).T)
-        pr =  idct(idct(self.r.T).T)
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                self.bitmap[y][x]=(int(pb[y][x]/(4*self.width*self.height)),int(pg[y][x]/(4*self.width*self.height)),int(pr[y][x]/(4*self.width*self.height)))
-    #def Ideal_LPF(self):
-    def Ideal_LPF(self,d=50):
-        b=np.zeros((self.height,self.width))
-        g=np.zeros((self.height,self.width))
-        r=np.zeros((self.height,self.width))
-        for y in range(self.height):
-            for x in xrange(self.width):
-                if sqrt((y-self.height/2)**2+(x-self.width/2)**2)<d:
-                    b[y][x]=1
-                    g[y][x]=1
-                    r[y][x]=1
-        fshiftb = np.fft.fftshift(self.b)
-        fshiftg= np.fft.fftshift(self.g)
-        fshiftr = np.fft.fftshift(self.r)
-        fb=np.multiply(fshiftb,b);
-        fg=np.multiply(fshiftg,g);
-        fr=np.multiply(fshiftr,r);
-        fb_=np.fft.ifftshift(fb)
-        fg_=np.fft.ifftshift(fg)
-        fr_=np.fft.ifftshift(fr)
-        pb = np.fft.ifft2(fb_)
-        pg = np.fft.ifft2(fg_)
-        pr = np.fft.ifft2(fr_)
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
-                
-    def butterworth_LPF(self,n=3,d=50):
-        b=np.zeros((self.height,self.width))
-        g=np.zeros((self.height,self.width))
-        r=np.zeros((self.height,self.width))
-        for y in range(self.height):
-            for x in xrange(self.width):
-                b[y][x]=1.0/(1+(sqrt((y-self.height/2)**2+(x-self.width/2)**2)/d)**(2*n))
-                g[y][x]=b[y][x]
-                r[y][x]=b[y][x]
-        fshiftb = np.fft.fftshift(self.b)
-        fshiftg= np.fft.fftshift(self.g)
-        fshiftr = np.fft.fftshift(self.r)
-        fb=np.multiply(fshiftb,b);
-        fg=np.multiply(fshiftg,g);
-        fr=np.multiply(fshiftr,r);
-        fb_=np.fft.ifftshift(fb)
-        fg_=np.fft.ifftshift(fg)
-        fr_=np.fft.ifftshift(fr)
-        pb = np.fft.ifft2(fb_)
-        pg = np.fft.ifft2(fg_)
-        pr = np.fft.ifft2(fr_)
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
-    def Gauss_LPF(self,d=50):
-        b=np.zeros((self.height,self.width))
-        g=np.zeros((self.height,self.width))
-        r=np.zeros((self.height,self.width))
-        for y in range(self.height):
-            for x in xrange(self.width):
-                b[y][x]=exp(-(((y-self.height/2)**2+(x-self.width/2)**2))/(2*d**2))
-                g[y][x]=b[y][x]
-                r[y][x]=b[y][x]
-        fshiftb = np.fft.fftshift(self.b)
-        fshiftg= np.fft.fftshift(self.g)
-        fshiftr = np.fft.fftshift(self.r)
-        fb=np.multiply(fshiftb,b);
-        fg=np.multiply(fshiftg,g);
-        fr=np.multiply(fshiftr,r);
-        fb_=np.fft.ifftshift(fb)
-        fg_=np.fft.ifftshift(fg)
-        fr_=np.fft.ifftshift(fr)
-        pb = np.fft.ifft2(fb_)
-        pg = np.fft.ifft2(fg_)
-        pr = np.fft.ifft2(fr_)
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
-    def exponential_LPF(self,n=3,d=50):
-        b=np.zeros((self.height,self.width))
-        g=np.zeros((self.height,self.width))
-        r=np.zeros((self.height,self.width))
-        for y in range(self.height):
-            for x in xrange(self.width):
-                d0=sqrt((y-self.height/2)**2+(x-self.width/2)**2)
-                b[y][x]=exp(-(d0/d)**n)
-                g[y][x]=b[y][x]
-                r[y][x]=b[y][x]
-        fshiftb = np.fft.fftshift(self.b)
-        fshiftg= np.fft.fftshift(self.g)
-        fshiftr = np.fft.fftshift(self.r)
-        fb=np.multiply(fshiftb,b);
-        fg=np.multiply(fshiftg,g);
-        fr=np.multiply(fshiftr,r);
-        fb_=np.fft.ifftshift(fb)
-        fg_=np.fft.ifftshift(fg)
-        fr_=np.fft.ifftshift(fr)
-        pb = np.fft.ifft2(fb_)
-        pg = np.fft.ifft2(fg_)
-        pr = np.fft.ifft2(fr_)
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
-                
-                
-    def Ideal_HPF(self,d=50):
-        b=np.ones((self.height,self.width))
-        g=np.ones((self.height,self.width))
-        r=np.ones((self.height,self.width))
-        for y in range(self.height):
-            for x in xrange(self.width):
-                if sqrt((y-self.height/2)**2+(x-self.width/2)**2)<d:
-                    b[y][x]=0
-                    g[y][x]=0
-                    r[y][x]=0
-        fshiftb = np.fft.fftshift(self.b)
-        fshiftg= np.fft.fftshift(self.g)
-        fshiftr = np.fft.fftshift(self.r)
-        fb=np.multiply(fshiftb,b);
-        fg=np.multiply(fshiftg,g);
-        fr=np.multiply(fshiftr,r);
-        fb_=np.fft.ifftshift(fb)
-        fg_=np.fft.ifftshift(fg)
-        fr_=np.fft.ifftshift(fr)
-        pb = np.fft.ifft2(fb_)
-        pg = np.fft.ifft2(fg_)
-        pr = np.fft.ifft2(fr_)
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
-    def butterworth_HPF(self,n=3,d=50):
-        b=np.zeros((self.height,self.width))
-        g=np.zeros((self.height,self.width))
-        r=np.zeros((self.height,self.width))
-        for y in range(self.height):
-            for x in xrange(self.width):
-                d0=sqrt((y-self.height/2)**2+(x-self.width/2)**2)
-                if y==self.height/2  and x==self.width/2:
-                    d0=1
-                b[y][x]=1.0/(1+(d/d0)**(2*n))
-                g[y][x]=b[y][x]
-                r[y][x]=b[y][x]
-        fshiftb = np.fft.fftshift(self.b)
-        fshiftg= np.fft.fftshift(self.g)
-        fshiftr = np.fft.fftshift(self.r)
-        fb=np.multiply(fshiftb,b);
-        fg=np.multiply(fshiftg,g);
-        fr=np.multiply(fshiftr,r);
-        fb_=np.fft.ifftshift(fb)
-        fg_=np.fft.ifftshift(fg)
-        fr_=np.fft.ifftshift(fr)
-        pb = np.fft.ifft2(fb_)
-        pg = np.fft.ifft2(fg_)
-        pr = np.fft.ifft2(fr_)
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
-    def exponential_HPF(self,n=3,d=50):
-        b=np.zeros((self.height,self.width))
-        g=np.zeros((self.height,self.width))
-        r=np.zeros((self.height,self.width))
-        for y in range(self.height):
-            for x in xrange(self.width):
-                d0=sqrt((y-self.height/2)**2+(x-self.width/2)**2)
-                if y==self.height/2  and x==self.width/2:
-                    d0=1
-                b[y][x]=exp(-(d/d0)**n)
-                g[y][x]=b[y][x]
-                r[y][x]=b[y][x]
-        fshiftb = np.fft.fftshift(self.b)
-        fshiftg= np.fft.fftshift(self.g)
-        fshiftr = np.fft.fftshift(self.r)
-        fb=np.multiply(fshiftb,b);
-        fg=np.multiply(fshiftg,g);
-        fr=np.multiply(fshiftr,r);
-        fb_=np.fft.ifftshift(fb)
-        fg_=np.fft.ifftshift(fg)
-        fr_=np.fft.ifftshift(fr)
-        pb = np.fft.ifft2(fb_)
-        pg = np.fft.ifft2(fg_)
-        pr = np.fft.ifft2(fr_)
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
-    def Gauss_HPF(self,d=50):
-        b=np.zeros((self.height,self.width))
-        g=np.zeros((self.height,self.width))
-        r=np.zeros((self.height,self.width))
-        for y in range(self.height):
-            for x in xrange(self.width):
-                b[y][x]=1-exp(-(((y-self.height/2)**2+(x-self.width/2)**2))/(2*d**2))
-                g[y][x]=b[y][x]
-                r[y][x]=b[y][x]
-        fshiftb = np.fft.fftshift(self.b)
-        fshiftg= np.fft.fftshift(self.g)
-        fshiftr = np.fft.fftshift(self.r)
-        fb=np.multiply(fshiftb,b);
-        fg=np.multiply(fshiftg,g);
-        fr=np.multiply(fshiftr,r);
-        fb_=np.fft.ifftshift(fb)
-        fg_=np.fft.ifftshift(fg)
-        fr_=np.fft.ifftshift(fr)
-        pb = np.fft.ifft2(fb_)
-        pg = np.fft.ifft2(fg_)
-        pr = np.fft.ifft2(fr_)
-        for y in xrange(self.height):
-            for x in xrange(self.width):
-                self.bitmap[y][x]=(int(pb[y][x]),int(pg[y][x]),int(pr[y][x]))
+    def getPanellabel(self):
+        return [u'空域滤波', u'图像检索', u'xxx']
+
+
+    def createPanels(self, parent, panels_size):
+        data = self.getData()
+        panels = []
+        self.choices = []
+        for paneldata in data:
+            panel = wx.Panel(parent, size = panels_size)
+            gbsizer = wx.GridBagSizer(vgap=8, hgap=6)
+            for itemcol, value in enumerate(paneldata):
+                 for itemrow, component in enumerate(value):
+                    if component[0] == u'label':
+                        if component[1] == u'similarImg':
+                            font = wx.Font(14, wx.DECORATIVE, wx.ITALIC, wx.NORMAL)
+                            self.similarImg = wx.StaticText(panel, label=" ", style=wx.TE_PROCESS_ENTER)
+                            self.similarImg.SetFont(font)
+                            self.similarImg.SetForegroundColour("RED")
+                            gbsizer.Add(self.similarImg, pos = (3,1), span=(1,1),flag=wx.ALIGN_LEFT|wx.ALIGN_CENTER_VERTICAL)
+                        else:
+                            gbsizer.Add(wx.StaticText(panel, label=component[1]), pos = (itemcol+1, itemrow+1), span=(1,1), flag=wx.ALIGN_LEFT|wx.ALIGN_CENTER_VERTICAL)
+                    elif component[0] == u'choices':
+                        choice = self.buildOneChoices(panel, component[1:], gbsizer, position = (itemcol+1, itemrow+1))
+                        self.choices.append(choice)
+                    elif component[0] == u'button':
+                        self.buildOneButton(panel, component[1:], gbsizer, position = (itemcol+1, itemrow+1))
+                    elif component[0] == u'slider':
+                        self.slider = wx.Slider(panel, id = wx.NewId(), value = component[1][0],size=(100,10), minValue=component[1][1],
+                                                maxValue = component[1][2], style=wx.SL_HORIZONTAL | wx.SL_AUTOTICKS | wx.SL_LABELS)
+			self.slider.SetTickFreq(5,1)
+                        gbsizer.Add(self.slider, pos = (itemcol+1, itemrow+1), span=(1,1), flag=wx.ALIGN_LEFT|wx.ALIGN_CENTER_VERTICAL)
+            panel.SetSizerAndFit(gbsizer)
+            panels.append(panel)
+        self.smoothMethodChoices = self.choices[0]
+        self.sharpenMethodChoices = self.choices[1]
+        self.filtermethodChoices = self.choices[2]
+        self.fourierBtn = panels[0].GetChildren()[6]
+        self.costranBtn = panels[0].GetChildren()[7]
+        self.fourierInvBtn = panels[0].GetChildren()[9]
+        self.costranInvBtn = panels[0].GetChildren()[10]
+        self.fourierInvBtn.Enable(False)
+        self.costranInvBtn.Enable(False)
+        return panels
+
+    def buildOneChoices(self, parent, data, sizer, position):
+        choice = wx.Choice(parent, choices=data[0])
+        choice.Bind(wx.EVT_CHOICE, data[1])
+        sizer.Add(choice, pos = position, span=(1,1), flag=wx.ALIGN_LEFT|wx.ALIGN_CENTER_VERTICAL)
+        return choice
+
+    def buildOneButton(self, parent, data, sizer, position):
+        button = wx.Button(parent, label = data[0])
+        button.Bind(wx.EVT_BUTTON, data[1])
+        sizer.Add(button, pos = position, span=(1,1), flag=wx.ALIGN_LEFT|wx.ALIGN_CENTER_VERTICAL)
+
+    ### 响应事件
+    def OnOK(self, evt):
+        self.EnableToolbarBtns()
+
+    def OnSelectedDirection(self, evt):
+        self.direction = self.choices[0].GetStringSelection()
+
+    def OnSelecteZoomMethod(self, evt):
+        self.method = self.choice.GetStringSelection()
+
+    def OnMirrorHor(self, evt):
+        self.EnableToolbarBtns()
+        self.bitmap.mirror(imglib.HORIZONTAL)
+        self.refreshBitmap()
+
+    def OnMirrorVer(self, evt):
+        self.EnableToolbarBtns()
+        self.bitmap.mirror(imglib.VERTICAL)
+        self.refreshBitmap()
+
+    def EnableToolbarBtns(self):
+        self.OKBtn.Show(False)
+        for button in self.toolItems:
+            button.Enable(True)
+
+    def OnClickMoveBtn(self, evt):
+        if self.moveBtn.IsEnabled():
+            self.moveBtn.Enable(False)# 移动按钮设置为不可点击并将其他按钮设为可点击
+            self.OKBtn.Show(True)
+            for button in self.toolItems:
+                if button != self.moveBtn:
+                    button.Enable(True)
+
+
+
+
+    def OnClickCutBtn(self, evt):
+        if self.cutBtn.IsEnabled():
+            self.cutBtn.Enable(False)# 移动按钮设置为不可点击并将其他按钮设为可点击
+            self.OKBtn.Show(True)
+            for button in self.toolItems:
+                if button != self.cutBtn:
+                    button.Enable(True)
+
+    def setDownPoint(self, evt):
+        self.upPoint = evt.GetPositionTuple()
+
+    def setUpPoint(self, evt):
+        if all((self.moveBtn.IsEnabled(), self.cutBtn.IsEnabled())):
+            pass
+        else:
+            self.downPoint = evt.GetPositionTuple()
+            dx = self.downPoint[0]-self.upPoint[0]
+            dy = self.downPoint[1]-self.upPoint[1]
+            if not self.moveBtn.IsEnabled():
+                self.bitmap.move(dx, dy)
+            elif not self.cutBtn.IsEnabled():
+                self.bitmap.cut(self.upPoint[::-1], self.downPoint[::-1] )
+            self.refreshBitmap()
+    def OnCancel(self, evt):
+        self.EnableToolbarBtns()
+        self.image = wx.Image(self.filename, wx.BITMAP_TYPE_BMP)
+        self.bitmap = imglib.readImg(self.filename)
+        self.sb1.SetBitmap(wx.BitmapFromImage(self.image))
+        self.sb1.Refresh()
+
+
+    def OnRotate(self, evt):
+        self.bitmap.rotate()
+        self.refreshBitmap()
+
+    def OnZoomIn(self, evt):
+        self.EnableToolbarBtns()
+        if self.method == u"最近邻":
+            self.bitmap.resize_nearest(1.1)
+        else:
+            self.bitmap.resize_bilinear(1.1)
+        self.refreshBitmap()
+
+    def OnZoomOut(self, evt):
+        self.EnableToolbarBtns()
+        if self.method == u"最近邻":
+            self.bitmap.resize_nearest(0.9)
+        else:
+            self.bitmap.resize_bilinear(0.9)
+        self.refreshBitmap()
+
+
+    def OnSmoothMethod(self, evt):
+        pass
+
+    def OnSharpenMethod(self, evt):
+        pass
+
+    def OnFilterChoice(self, evt):
+        self.filtermethod = self.filtermethodChoices.GetStringSelection()
+
+    def OnSharpen(self, evt):
+        if self.sharpenMethodChoices.GetStringSelection() == u"高通滤波":
+            self.bitmap.Sharpen_HPF()
+        elif self.sharpenMethodChoices.GetStringSelection() == u"高增益滤波":
+            self.bitmap.Sharpen_GFF()
+        elif self.sharpenMethodChoices.GetStringSelection() == u"Roberts算子":
+            self.bitmap.Sharpen_Roberts()
+        elif self.sharpenMethodChoices.GetStringSelection() == u"Prewitt算子":
+            self.bitmap.Sharpen_Prewitt()
+        elif self.sharpenMethodChoices.GetStringSelection() == u"Sobel算子":
+            self.bitmap.Sharpen_Sobel()
+        elif self.sharpenMethodChoices.GetStringSelection() == u"Laplacian算子":
+            self.bitmap.Sharpen_Laplacian()
+        self.refreshBitmap()
+
+    def OnSmooth(self, evt):
+        if self.smoothMethodChoices.GetStringSelection() == u"低通滤波":
+            self.bitmap.Smooth_LPF()
+        else:
+            self.bitmap.Smooth_midvaule()
+        self.refreshBitmap()
+
+    def OnFourier(self, evt):
+        self.bitmap.image_fft()
+        self.refreshBitmap()
+        self.fourierBtn.Enable(False)
+        self.fourierInvBtn.Enable(True)
+
+    def OnFourierInv(self, evt):
+        self.bitmap.image_ifft()
+        self.refreshBitmap()
+        self.fourierBtn.Enable(True)
+        self.fourierInvBtn.Enable(False)
+
+    def OnCos(self, evt):
+        self.bitmap.image_dct()
+        self.refreshBitmap()
+        self.costranBtn.Enable(False)
+        self.costranInvBtn.Enable(True)
+
+
+
+    def OnCosInv(self, evt):
+        self.bitmap.image_idct()
+        self.refreshBitmap()
+        self.costranBtn.Enable(True)
+        self.costranInvBtn.Enable(False)
+
+    def OnLowPass(self, evt):
+        args = self.slider.GetValue()
+        if self.filtermethod == u"理想":
+            self.bitmap.Ideal_LPF(args)
+        elif self.filtermethod == u"巴特沃斯":
+            self.bitmap.butterworth_LPF(d=args)
+        elif self.filtermethod == u"高斯":
+            self.bitmap.Gauss_LPF(d=args)
+        else:
+            self.bitmap.exponential_LPF(d=args)
+        self.refreshBitmap()
+
+    def OnHighPass(self, evt):
+        args = self.slider.GetValue()
+        if self.filtermethod == u"理想":
+            self.bitmap.Ideal_HPF(d= args)
+        elif self.filtermethod == u"巴特沃斯":
+            self.bitmap.butterworth_HPF(d= args)
+        elif self.filtermethod == u"高斯":
+            self.bitmap.Gauss_HPF(d= args)
+        else:
+            self.bitmap.exponential_HPF(d= args)
+        self.refreshBitmap()
+
+    def showHistFig(self):
+        data = self.bitmap.hist()
+        self.histpanel.refresh(data)
+
+    def OnHistEqu(self, evt):
+        data = self.bitmap.hist()
+        equData = self.histpanel.refresh(data)
+        self.bitmap.hist_equalization(equData)
+        self.refreshBitmap()
+
+
+
+
+    def getImageGray(self, evt):
+        pos = evt.GetPositionTuple()
+        self.statusbar.SetStatusText("X:%s, Y:%s" % (str(pos[0]), str(pos[1])))
+        self.statusbar.SetStatusText("Gray:%s" % str(self.bitmap.getPix(pos)), 1)
+
+    def initStatusBar(self):
+        self.statusbar = self.CreateStatusBar()
+        self.statusbar.SetFieldsCount(3)
+        self.statusbar.SetStatusWidths([-1, -2, -3])
+
+    def menuData(self):#2 菜单数据
+        return [("&File", (
+            ("&Open", "Open BMP file", self.OnOpen),
+            ("&Save", "Save BMP file", self.OnSave),
+            ("&Saveas", "Save as", self.OnSaveAs),
+            ("", "", ""),
+            ("&Quit", "Quit", self.OnCloseWindow)
+        ))]
+
+    wildcard = "BMP files (*.bmp)|*.bmp"
+
+
+    def OnOpen(self, evt):
+        fileDlg = wx.FileDialog(self, "Open BMP file", os.getcwd(), wildcard = self.wildcard, style=wx.OPEN)
+        if fileDlg.ShowModal() == wx.ID_OK:
+            self.filename = fileDlg.GetPath()
+            self.openBMP()
+        fileDlg.Destroy()
+
+    def OnSearchSimilarImg(self, evt):
+        pathDlg = wx.DirDialog(self, "Select a dir", os.getcwd())
+        if pathDlg.ShowModal() == wx.ID_OK:
+            self.path = pathDlg.GetPath()
+            filenames =  os.listdir(self.path)
+            filenames = filter(lambda filename: filename[-4:]==".bmp", filenames)
+            filenames = [self.path+'/'+filename for filename in filenames]
+        hists =  [imglib.readImg(filename).hist() for filename in filenames]
+        bitmaphist = self.bitmap.hist()
+        diff = [np.sum((bitmaphist-hist)**2, axis=0) for hist in hists]
+        sortedImg = np.argsort(diff, axis=0)
+        label = u"共发现{filenum}个.bmp格式文件， 按直方图相似度排序为：".format(filenum=len(filenames))
+        for item, value in enumerate(sortedImg):
+            label += u"\n"+str(item+1)+u"."+filenames[value].split('/')[-1]
+            if item > 9:
+                break
+        self.similarImg.SetLabel(label)
+        pathDlg.Destroy()
+        dlg = self.createImageDialog()
+        if dlg.ShowModal() == wx.ID_OK:
+            print "OK"
+        # wx.Image()
+        # imgDlg = wx.Dialog(self, -1, "similarImages", size=(800,600))
+
+    # def createImageDialog(self):
+    #     dlg = wx.Dialog(self, -1, "Similar Images", size = (800, 600))
+    #     okbutton = wx.Button(dlg, wx.ID_OK, "OK",pos = (400, 580))
+    #     okbutton.SetDefault()
+    #     return dlg
+
+    def openBMP(self):
+        # 打开图像，并复制一份，所有图像处理操作在这个复制图像上进行R
+        self.image = wx.Image(self.filename, wx.BITMAP_TYPE_BMP)
+        self.bitmap = imglib.readImg(self.filename)
+        self.tmpImg = './tmp.bmp'
+        self.bitmap.save_to(self.tmpImg)
+        self.sb1 = wx.StaticBitmap(self.panel, pos = ((self.panel.Size[0] - self.image.Width)/2, (self.panel.Size[1]-self.image.Height)/2), id = -1, bitmap = wx.BitmapFromImage(self.image))
+        self.sb1.Bind(wx.EVT_MOTION, self.getImageGray)
+        self.sb1.Bind(wx.EVT_LEFT_DOWN, self.setDownPoint)
+        self.sb1.Bind(wx.EVT_LEFT_UP, self.setUpPoint)
+        data = self.bitmap.hist()
+        self.histpanel.refresh(data)
+        self.SetTitle(self.title + '--' + self.filename)
+
+    # created at 11.12
+    def refreshBitmap(self):
+        self.bitmap.save_to(self.tmpImg)
+        self.image = wx.Image(self.tmpImg, wx.BITMAP_TYPE_BMP)
+        self.sb1.SetBitmap(wx.BitmapFromImage(self.image))
+        self.sb1.Refresh()
+        data = self.bitmap.hist()
+        self.histpanel.refresh(data)
+
+
+    def OnSave(self, evt):
+        self.bitmap.save_to(self.filename)
+    def OnSaveAs(self, evt):
+        dlg = wx.FileDialog(self, "Save BMP as...", os.getcwd(), style=wx.SAVE|wx.OVERWRITE_PROMPT, wildcard= self.wildcard)
+        if dlg.ShowModal() == wx.ID_OK:
+            filename = dlg.GetPath()
+            if not os.path.splitext(self.filename)[1]:
+                filename += '.bmp'
+            self.filename = filename
+            self.bitmap.save_to(self.filename)
+            self.SetTitle(self.title+'--'+self.filename)
+        dlg.Destroy()
+
+
+
+
+
+    def OnCloseWindow(self, evt):
+        self.Destroy()
+        wx.Exit()
+
+
+class histPanel(wx.Panel):
+    def __init__(self, *args, **kwargs):
+        super(histPanel, self).__init__(*args, **kwargs)
+        self.hsizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.vsizer = wx.BoxSizer(wx.VERTICAL)
+        self.createFigureCanvas()
+
+    def createFigureCanvas(self):
+        self.figure = Figure(figsize=(5,3))
+        self.axes = self.figure.add_subplot(111)
+        self.canvas = FigureCanvas(self, -1, self.figure)
+        self.vsizer.Add(self.canvas)
+
+
+    def refresh(self, data):
+        hist_data = self.axes.hist(data, 256)
+        self.canvas.draw()
+        return hist_data
+
+
+
+
+
+class App(wx.App):
+    def OnPreInit(self):
+        bmp = wx.Image("./icons/splash.png", wx.BITMAP_TYPE_PNG).ConvertToBitmap()
+        wx.SplashScreen(bmp, wx.SPLASH_CENTRE_ON_SCREEN | wx.SPLASH_TIMEOUT,1500, None, -1)
+        wx.Yield()
+        myframe = guiFrame(None)
+        myframe.Show()
+        return True
+
+
 if __name__ == '__main__':
-    img =readImg('../bear.bmp')
-    img.create_bitmap()
-    #@img.plot_hist()
-    #print img.height
-    #img.rgb2gray()
-    #img.resize_nearest(100,100)
-    #img.resize_bilinear(500,500)
-    #img.rotate()
-    #img.Smooth_LPF()
-    #img.resize_nearest()
-    #img.cut((50,50),(10,10))
-    #img.resize_bilinear()
-    #img.rotate()
-    img.Smooth_midvaule()
-    #img.Sharpen_HPF()
-    #img.image_dct()
-    #img.image_idct()
-    #img.image_fft()
-    #img.Gauss_HPF()
-    #img.Sharpen_GFF()
-    #img.Sharpen_Roberts()
-    #img.Sharpen_Prewitt()
-    #img.Sharpen_Sobel()
-    #img.Sharpen_Laplacian()
-    #img.move(distance=40, direction=HORIZONTAL)
-    #img.plot_hist()    
-    #img.image_dct()
-    img.save_to(filename="../out6.bmp")
+    app = App()
+    app.MainLoop()

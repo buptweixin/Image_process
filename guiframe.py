@@ -13,11 +13,6 @@ from matplotlib.figure import Figure
 import numpy as np
 from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
 
-
-
-
-
-
 class guiFrame(wx.Frame):
     def __init__(self, parent):
         self.title = "Pixel"
@@ -148,13 +143,14 @@ class guiFrame(wx.Frame):
                 [['choices', [u"低通", u"中值"], self.OnSmoothMethod],['button', u'滤波',self.OnSmooth]],
                 [['choices', [u"高通", u"高增益", u"Roberts算子", u"Prewitt算子", u"Sobel算子", u"Laplacian算子"],
                   self.OnSharpenMethod],['button', u'锐化', self.OnSharpen]],
-                [['label', u'频域滤波']],
-                [['choices', [u"理想滤波器", u"巴特沃斯滤波器", u"高斯滤波器", u"指数滤波器"], self.OnFilterChoice],
-                ['slider',[10, 0, 50]]],
-                [['button', u'低通滤波', self.OnLowPass], ['button', u'高通滤波', self.OnHighPass]],
                 [['label', u'变换与反变换']],
                 [['button', u'傅里叶', self.OnFourier], ['button', u'离散余弦', self.OnCos]],
                 [['button', u'傅里叶反变换', self.OnFourierInv], ['button', u'离散余弦反变换', self.OnCosInv]],
+                [['label', u'频域滤波']],
+                [['choices', [u"理想滤波器", u"巴特沃斯滤波器", u"高斯滤波器", u"指数滤波器"], self.OnFilterChoice],
+                ['slider',[25, 0, 50]]],
+                [['button', u'低通滤波', self.OnLowPass], ['button', u'高通滤波', self.OnHighPass]]
+
 
             ],
             [
@@ -194,6 +190,7 @@ class guiFrame(wx.Frame):
                     elif component[0] == u'slider':
                         self.slider = wx.Slider(panel, id = wx.NewId(), value = component[1][0], minValue=component[1][1],
                                                 maxValue = component[1][2], style=wx.SL_HORIZONTAL | wx.SL_AUTOTICKS | wx.SL_LABELS)
+                        #self.slider.Bind(wx.EVT_SLIDER, self.OnSlider)
                         gbsizer.Add(self.slider, pos = (itemcol+1, itemrow+1), span=(1,1), flag=wx.ALIGN_LEFT|wx.ALIGN_CENTER_VERTICAL)
             panel.SetSizerAndFit(gbsizer)
             panels.append(panel)
@@ -204,9 +201,10 @@ class guiFrame(wx.Frame):
         self.costranBtn = panels[0].GetChildren()[7]
         self.fourierInvBtn = panels[0].GetChildren()[9]
         self.costranInvBtn = panels[0].GetChildren()[10]
-        self.fourierInvBtn.Enable(False)
-        self.costranInvBtn.Enable(False)
+        #self.fourierInvBtn.Enable(False)
+        #self.costranInvBtn.Enable(False)
         return panels
+
 
     def buildOneChoices(self, parent, data, sizer, position):
         choice = wx.Choice(parent, choices=data[0])
@@ -241,6 +239,10 @@ class guiFrame(wx.Frame):
 
     def EnableToolbarBtns(self):
         self.OKBtn.Show(False)
+        self.fourierBtn.Enable(True)
+        self.fourierInvBtn.Enable(True)
+        self.costranBtn.Enable(True)
+        self.costranInvBtn.Enable(True)
         for button in self.toolItems:
             button.Enable(True)
 
@@ -365,7 +367,7 @@ class guiFrame(wx.Frame):
         self.costranInvBtn.Enable(False)
 
     def OnLowPass(self, evt):
-        self.OnFourier(evt)
+        #self.OnFourier(evt)
         args = self.slider.GetValue()
         if self.filtermethod == u"理想":
             self.bitmap.Ideal_LPF(args)
@@ -378,7 +380,7 @@ class guiFrame(wx.Frame):
         self.refreshBitmap()
 
     def OnHighPass(self, evt):
-        self.OnFourier(evt)
+        #self.OnFourier(evt)
         args = self.slider.GetValue()
         if self.filtermethod == u"理想":
             self.bitmap.Ideal_HPF(d= args)
@@ -443,7 +445,7 @@ class guiFrame(wx.Frame):
         filenames = filter(lambda filename: filename[-4:]==".bmp", filenames)
         hists = [np.array(self.axes.hist(imglib.readImg(self.path + '/' + filename).hist(), 256, range=(0, 255))) for filename in filenames]
         bitmaphist = np.array(self.axes.hist(self.bitmap.hist(), 256, range=(0, 255)))
-        print bitmaphist[0].shape
+
         diff = [np.sum((bitmaphist[0]-hist[0])**2, axis=0) for hist in hists]
         sortedImg = np.argsort(diff, axis=0)
         label = u"共发现{filenum}个.bmp格式文件， 按直方图相似度排序为：".format(filenum=len(filenames))
