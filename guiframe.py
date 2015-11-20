@@ -9,7 +9,6 @@ import matplotlib
 matplotlib.use('WXAgg')
 from impy import imglib
 from matplotlib.figure import Figure
-
 import numpy as np
 from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
 
@@ -31,6 +30,7 @@ class guiFrame(wx.Frame):
         self.sb1 = wx.StaticBitmap(self.panel, -1)
         self.figure = Figure(figsize=(5,3))
         self.axes = self.figure.add_subplot(111)
+        self.filePath = os.getcwd()
         self.openBMP()
         self.hsider = wx.BoxSizer(wx.HORIZONTAL)
         self.staticBitmaps = self.createStaticBitmaps()
@@ -430,9 +430,10 @@ class guiFrame(wx.Frame):
     def OnOpen(self, evt):
         data = self.bitmap.hist()
         self.histpanel.refresh(data)
-        fileDlg = wx.FileDialog(self, "Open BMP file", os.getcwd(), wildcard = self.wildcard, style=wx.OPEN)
+        fileDlg = wx.FileDialog(self, "Open BMP file", self.filePath, wildcard = self.wildcard, style=wx.OPEN)
         if fileDlg.ShowModal() == wx.ID_OK:
             self.filename = fileDlg.GetPath()
+            self.filePath = os.path.split(self.filename)[0]
             self.openBMP()
         fileDlg.Destroy()
 
