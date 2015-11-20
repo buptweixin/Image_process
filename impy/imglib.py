@@ -9,6 +9,7 @@ from math import ceil, sqrt, exp
 import numpy as np
 import random
 from scipy.fftpack import dct,idct
+import time
 
 FORMAT_OFFSET = int('0',16)
 SIZE_OFFSET = int('2',16)
@@ -310,7 +311,7 @@ class readImg:
         self.height=new_height
         self.width=new_width
 
-    def  Sharpen_HPF(self,m=1):
+    def Sharpen_HPF(self,m=1):
         new_width=self.width
         new_height=self.height
         new_bitmap = [[0 for j in range(new_width)] for i in range(new_height)]
@@ -731,8 +732,9 @@ class readImg:
 
 if __name__ == '__main__':
     img =readImg('../bear1107.bmp')
-    img.Gauss_HPF()
-
+    t1 = time.time()
+    img.resize_bilinear()
+    print time.time() - t1
 
     #img.save_to(filename="../bear1107.bmp", data = bitmap)
 

@@ -9,6 +9,7 @@ import matplotlib
 matplotlib.use('WXAgg')
 from impy import imglib
 from matplotlib.figure import Figure
+
 import numpy as np
 from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
 
@@ -20,22 +21,31 @@ from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
 class guiFrame(wx.Frame):
     def __init__(self, parent):
         self.title = "Pixel"
-        super(guiFrame, self).__init__(parent, -1, self.title, size=(1200, 720))
-        self.sizer = wx.BoxSizer(wx.HORIZONTAL)
+        super(guiFrame, self).__init__(parent, -1, self.title, size=(1200, 700))
         self.panel = wx.Panel(self, size = (self.Size[0]*2/3, self.Size[1]-20))
         self.panel.SetBackgroundColour("WHITE")
-        self.sizer.Add(self.panel, 1, wx.LEFT | wx.TOP | wx.EXPAND, border = 1)
         self.noteBook = self.createNotebook()
         self.createHistPanel()
-        self.sizer.Add(self.noteBook,1,wx.RIGHT|wx.TOP|wx.EXPAND, border = 1)
         self.createToolBar()
         self.initStatusBar()
         self.createMenuBar()
         self.direction = u'水平'
         self.method = u"双线性"
         self.filtermethod = u"理想"
-        self.filename = './bear1107.bmp'
+        self.filename = './testImages/lena/lena200.bmp'
+        self.sb1 = wx.StaticBitmap(self.panel, -1)
+        self.figure = Figure(figsize=(5,3))
+        self.axes = self.figure.add_subplot(111)
         self.openBMP()
+        self.hsider = wx.BoxSizer(wx.HORIZONTAL)
+        self.staticBitmaps = self.createStaticBitmaps()
+        for staticBitmap in self.staticBitmaps:
+            self.hsider.Add(staticBitmap, proportion=1, flag= wx.ALL, border=20)
+
+        self.panel.SetSizer(self.hsider)
+
+    def createStaticBitmaps(self):
+        return [wx.StaticBitmap(self.panel, -1, pos=(i*self.panel.Size[1]/3 + 100, 20)) for i in range(3)]
 
     def createMenuItem(self, menu, label, status, handler, kind=wx.ITEM_NORMAL):
         if not label:
@@ -71,7 +81,7 @@ class guiFrame(wx.Frame):
             ["./icons/mirror_ver.png", u"垂直翻转", self.OnMirrorVer],
             ["./icons/move.png", u"移动图片", self.OnClickMoveBtn],
             ["./icons/cut.png", u"裁剪图片", self.OnClickCutBtn],
-            [[u'双线性',u'最近邻'],self.OnSelecteZoomMethod],
+            [[u'最近邻', u'双线性'],self.OnSelecteZoomMethod],
             ["./icons/zoomin.png", u"放大", self.OnZoomIn],
             ["./icons/zoomout.png", u"缩小", self.OnZoomOut],
             ["./icons/rotate.png", u"旋转", self.OnRotate],
@@ -121,7 +131,9 @@ class guiFrame(wx.Frame):
         return notebook
 
     def createHistPanel(self):
-        self.histpanel = histPanel(self, style = wx.BORDER|wx.SOLID, pos = (self.panel.Size[0], self.panel.Size[1]/2), size = (self.noteBook.Size[0], self.panel.Size[1]/2))
+        self.histpanel = histPanel(self, style = wx.BORDER|wx.SOLID,
+                                   pos = (self.panel.Size[0], self.panel.Size[1]/2+50),
+                                   size = (self.noteBook.Size[0], self.panel.Size[1]/2))
         histEqualizationBtn = wx.Button(self.histpanel, label=u"均衡化")
         histEqualizationBtn.Bind(wx.EVT_BUTTON, self.OnHistEqu)
         self.histpanel.hsizer.Add(histEqualizationBtn,1, wx.RIGHT, border=1)
@@ -133,13 +145,17 @@ class guiFrame(wx.Frame):
         return [
             [
                 [['label', u'空域滤波']],
-                [['choices', [u"低通滤波", u"中值滤波"], self.OnSmoothMethod],['button', u'平滑',self.OnSmooth]],
-                [['choices', [u"高通滤波", u"高增益滤波", u"Roberts算子", u"Prewitt算子", u"Sobel算子", u"Laplacian算子"],self.OnSharpenMethod],['button', u'锐化', self.OnSharpen]],
-                [['button', u'傅里叶', self.OnFourier], ['button', u'离散余弦', self.OnCos]],
-                [['button', u'傅里叶反变换', self.OnFourierInv], ['button', u'离散余弦反变换', self.OnCosInv]],
+                [['choices', [u"低通", u"中值"], self.OnSmoothMethod],['button', u'滤波',self.OnSmooth]],
+                [['choices', [u"高通", u"高增益", u"Roberts算子", u"Prewitt算子", u"Sobel算子", u"Laplacian算子"],
+                  self.OnSharpenMethod],['button', u'锐化', self.OnSharpen]],
+                [['label', u'频域滤波']],
                 [['choices', [u"理想滤波器", u"巴特沃斯滤波器", u"高斯滤波器", u"指数滤波器"], self.OnFilterChoice],
                 ['slider',[10, 0, 50]]],
-                [['button', u'低通滤波', self.OnLowPass], ['button', u'高通滤波', self.OnHighPass]]
+                [['button', u'低通滤波', self.OnLowPass], ['button', u'高通滤波', self.OnHighPass]],
+                [['label', u'变换与反变换']],
+                [['button', u'傅里叶', self.OnFourier], ['button', u'离散余弦', self.OnCos]],
+                [['button', u'傅里叶反变换', self.OnFourierInv], ['button', u'离散余弦反变换', self.OnCosInv]],
+
             ],
             [
                 [['label', u'图像检索'],['button' ,u'选择文件夹', self.OnSearchSimilarImg], ['label', u'similarImg']]
@@ -149,7 +165,7 @@ class guiFrame(wx.Frame):
 
 
     def getPanellabel(self):
-        return [u'空域滤波', u'图像检索', u'xxx']
+        return [u'图像操作', u'图像检索', u'xxx']
 
 
     def createPanels(self, parent, panels_size):
@@ -301,9 +317,9 @@ class guiFrame(wx.Frame):
         self.filtermethod = self.filtermethodChoices.GetStringSelection()
 
     def OnSharpen(self, evt):
-        if self.sharpenMethodChoices.GetStringSelection() == u"高通滤波":
+        if self.sharpenMethodChoices.GetStringSelection() == u"高通":
             self.bitmap.Sharpen_HPF()
-        elif self.sharpenMethodChoices.GetStringSelection() == u"高增益滤波":
+        elif self.sharpenMethodChoices.GetStringSelection() == u"高增益":
             self.bitmap.Sharpen_GFF()
         elif self.sharpenMethodChoices.GetStringSelection() == u"Roberts算子":
             self.bitmap.Sharpen_Roberts()
@@ -410,6 +426,8 @@ class guiFrame(wx.Frame):
 
 
     def OnOpen(self, evt):
+        data = self.bitmap.hist()
+        self.histpanel.refresh(data)
         fileDlg = wx.FileDialog(self, "Open BMP file", os.getcwd(), wildcard = self.wildcard, style=wx.OPEN)
         if fileDlg.ShowModal() == wx.ID_OK:
             self.filename = fileDlg.GetPath()
@@ -420,39 +438,37 @@ class guiFrame(wx.Frame):
         pathDlg = wx.DirDialog(self, "Select a dir", os.getcwd())
         if pathDlg.ShowModal() == wx.ID_OK:
             self.path = pathDlg.GetPath()
-            filenames =  os.listdir(self.path)
-            filenames = filter(lambda filename: filename[-4:]==".bmp", filenames)
-            filenames = [self.path+'/'+filename for filename in filenames]
-        hists =  [imglib.readImg(filename).hist() for filename in filenames]
-        bitmaphist = self.bitmap.hist()
-        diff = [np.sum((bitmaphist-hist)**2, axis=0) for hist in hists]
+        pathDlg.Destroy()
+        filenames = os.listdir(self.path)
+        filenames = filter(lambda filename: filename[-4:]==".bmp", filenames)
+        hists = [np.array(self.axes.hist(imglib.readImg(self.path + '/' + filename).hist(), 256, range=(0, 255))) for filename in filenames]
+        bitmaphist = np.array(self.axes.hist(self.bitmap.hist(), 256, range=(0, 255)))
+        print bitmaphist[0].shape
+        diff = [np.sum((bitmaphist[0]-hist[0])**2, axis=0) for hist in hists]
         sortedImg = np.argsort(diff, axis=0)
         label = u"共发现{filenum}个.bmp格式文件， 按直方图相似度排序为：".format(filenum=len(filenames))
         for item, value in enumerate(sortedImg):
-            label += u"\n"+str(item+1)+u"."+filenames[value].split('/')[-1]
+            label += u"\n"+str(item+1)+u"."+filenames[value]
+
+            if item < 3:
+                image = wx.Image(self.path+'/'+filenames[value], wx.BITMAP_TYPE_BMP)
+                bmp = wx.BitmapFromImage(image)
+                self.staticBitmaps[item].SetBitmap(bmp)
             if item > 9:
                 break
         self.similarImg.SetLabel(label)
-        pathDlg.Destroy()
-        dlg = self.createImageDialog()
-        if dlg.ShowModal() == wx.ID_OK:
-            print "OK"
-        # wx.Image()
-        # imgDlg = wx.Dialog(self, -1, "similarImages", size=(800,600))
 
-    # def createImageDialog(self):
-    #     dlg = wx.Dialog(self, -1, "Similar Images", size = (800, 600))
-    #     okbutton = wx.Button(dlg, wx.ID_OK, "OK",pos = (400, 580))
-    #     okbutton.SetDefault()
-    #     return dlg
 
     def openBMP(self):
+        self.sb1.Destroy()
         # 打开图像，并复制一份，所有图像处理操作在这个复制图像上进行R
         self.image = wx.Image(self.filename, wx.BITMAP_TYPE_BMP)
         self.bitmap = imglib.readImg(self.filename)
         self.tmpImg = './tmp.bmp'
         self.bitmap.save_to(self.tmpImg)
-        self.sb1 = wx.StaticBitmap(self.panel, pos = ((self.panel.Size[0] - self.image.Width)/2, (self.panel.Size[1]-self.image.Height)/2), id = -1, bitmap = wx.BitmapFromImage(self.image))
+        self.sb1 = wx.StaticBitmap(self.panel, pos = ((self.panel.Size[0] - self.image.Width)/2,
+                                                      (self.panel.Size[1]-self.image.Height)/2),
+                                   id = -1, bitmap = wx.BitmapFromImage(self.image))
         self.sb1.Bind(wx.EVT_MOTION, self.getImageGray)
         self.sb1.Bind(wx.EVT_LEFT_DOWN, self.setDownPoint)
         self.sb1.Bind(wx.EVT_LEFT_UP, self.setUpPoint)
@@ -500,7 +516,7 @@ class histPanel(wx.Panel):
         self.createFigureCanvas()
 
     def createFigureCanvas(self):
-        self.figure = Figure(figsize=(4,4))
+        self.figure = Figure(figsize=(5,3))
         self.axes = self.figure.add_subplot(111)
         # self.axes = self.figure.add_subplot(111)
         #self.axes.hist([1,1,1,12,2,2,2,3], 120)
@@ -509,7 +525,9 @@ class histPanel(wx.Panel):
 
 
     def refresh(self, data):
-        hist_data = self.axes.hist(data, 256)
+        self.canvas.Close()
+        self.axes.cla()
+        hist_data = self.axes.hist(data, 256, range=(0, 255))
         self.canvas.draw()
         #self.canvas.Refresh()
         return hist_data
